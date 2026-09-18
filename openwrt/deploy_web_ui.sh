@@ -13,7 +13,7 @@ fi
 wget -qO /www/datbeo/index.html "$BASE/index.html"
 wget -qO /www/datbeo/style.css "$BASE/style.css"
 wget -qO /www/datbeo/app.js "$BASE/app.js"
-wget -qO /www/datbeo/hls.min.js "https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js"
+wget -qO /www/datbeo/hls.min.js "https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js" || echo "WARN: không tải được hls.js; native HLS fallback sẽ được dùng."
 wget -qO /www/cgi-bin/datbeo-traffic "$CGI"
 wget -qO /www/cgi-bin/datbeo-cameras "$CAM"
 
