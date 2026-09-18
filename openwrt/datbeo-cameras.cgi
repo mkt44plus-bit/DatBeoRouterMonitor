@@ -96,7 +96,9 @@ scan)
   A="$1"; B="$2"; C="$3"; D="$4"
   IPNUM=$((A*16777216+B*65536+C*256+D))
   HOSTBITS=$((32-PREFIX))
-  BLOCK=$((2**HOSTBITS))
+  BLOCK=1
+  HB=0
+  while [ "$HB" -lt "$HOSTBITS" ]; do BLOCK=$((BLOCK*2)); HB=$((HB+1)); done
   [ "$BLOCK" -le 1024 ] || { printf '{"ok":false,"error":"Dải quá lớn; giới hạn 1024 địa chỉ mỗi lần quét"}\n'; exit 0; }
   NET=$((IPNUM-(IPNUM % BLOCK)))
   START="$NET"; END=$((NET+BLOCK-1))
