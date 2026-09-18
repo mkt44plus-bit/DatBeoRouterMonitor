@@ -104,7 +104,7 @@ scan)
   START="$NET"; END=$((NET+BLOCK-1))
   if [ "$PREFIX" -le 30 ]; then START=$((NET+1)); END=$((END-1)); fi
 
-  OUT="/tmp/datbeo-scan-$.txt"
+  OUT="/tmp/datbeo-scan.txt"
   : > "$OUT"
   worker() {
     N="$1"
