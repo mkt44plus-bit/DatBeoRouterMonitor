@@ -24,6 +24,12 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
+      - name: Validate Web UI and router scripts
+        run: |
+          node --check openwrt/www/datbeo/app.js
+          sh -n openwrt/datbeo-traffic.cgi
+          sh -n openwrt/datbeo-cameras.cgi
+          sh -n openwrt/deploy_web_ui.sh
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug
       - name: Upload APK
