@@ -62,11 +62,36 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Capture unexpected crashes so the app does not silently fail without diagnostics.
+        Thread.setDefaultUncaughtExceptionHandler { _, e ->
+            try {
+                getSharedPreferences("diagnostics", MODE_PRIVATE)
+                    .edit()
+                    .putString("last_crash", e.stackTraceToString())
+                    .apply()
+            } catch (_: Throwable) {
+                // Never throw from the crash handler.
+            }
+        }
+
         window.statusBarColor = Color.rgb(190, 12, 111)
         window.navigationBarColor = Color.rgb(190, 12, 111)
         root = FrameLayout(this)
         setContentView(root)
+
+        val previousCrash = getSharedPreferences("diagnostics", MODE_PRIVATE)
+            .getString("last_crash", null)
         showLogin()
+        if (!previousCrash.isNullOrBlank()) {
+            getSharedPreferences("diagnostics", MODE_PRIVATE)
+                .edit().remove("last_crash").apply()
+            Toast.makeText(
+                this,
+                "Lần chạy trước bị lỗi UI. Bản này đã ghi lại lỗi để xử lý.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
     }
 
     override fun onBackPressed() {
@@ -126,17 +151,22 @@ class MainActivity : Activity() {
             setTextColor(Color.WHITE)
             background = outlineButton()
             setOnClickListener {
-                routerIp = ipInput.text.toString().trim()
-                apiKey = keyInput.text.toString().trim()
-                if (routerIp.isEmpty() || apiKey.isEmpty()) {
-                    toast("Nhập IP và KEY")
-                    return@setOnClickListener
+                try {
+                    routerIp = ipInput.text.toString().trim()
+                    apiKey = keyInput.text.toString().trim()
+                    if (routerIp.isEmpty() || apiKey.isEmpty()) {
+                        toast("Nhập IP và KEY")
+                        return@setOnClickListener
+                    }
+                    connected = true
+                    showDashboard()
+                    fetchData(true)
+                    handler.removeCallbacks(refreshRunnable)
+                    handler.postDelayed(refreshRunnable, 3000)
+                } catch (e: Throwable) {
+                    connected = false
+                    showFatalUiError("Lỗi khi mở Dashboard", e)
                 }
-                connected = true
-                showDashboard()
-                fetchData(true)
-                handler.removeCallbacks(refreshRunnable)
-                handler.postDelayed(refreshRunnable, 3000)
             }
         }
         screen.addView(login, LinearLayout.LayoutParams(-1, 58.dp()).apply {
@@ -635,27 +665,67 @@ class MainActivity : Activity() {
                 lastUpdated = java.text.SimpleDateFormat("HH:mm:ss").format(java.util.Date())
 
                 runOnUiThread {
-                    if (connected) {
-                        statusView.text = "● Đang kết nối"
-                        statusView.setTextColor(0xFF8BFFB0.toInt())
-                        showDashboard()
+                    try {
+                        if (connected) {
+                            statusView.text = "● Đang kết nối"
+                            statusView.setTextColor(0xFF8BFFB0.toInt())
+                            showDashboard()
+                        }
+                    } catch (e: Throwable) {
+                        showFatalUiError("Lỗi cập nhật giao diện", e)
                     }
                 }
-            } catch (e: Exception) {
-                if (initial) {
-                    runOnUiThread {
-                        val message = e.message ?: "unknown"
+            } catch (e: Throwable) {
+                runOnUiThread {
+                    try {
+                        val message = e.message ?: e.javaClass.simpleName
                         if (::statusView.isInitialized) {
                             statusView.text = "● API lỗi — đang thử lại"
                             statusView.setTextColor(0xFFFFD166.toInt())
                         }
-                        toast("Không lấy được dữ liệu: $message")
+                        if (initial) toast("Không lấy được dữ liệu: $message")
+                    } catch (uiError: Throwable) {
+                        showFatalUiError("Lỗi xử lý API", uiError)
                     }
                 }
             } finally {
                 conn?.disconnect()
             }
         }
+    }
+
+    private fun showFatalUiError(title: String, e: Throwable) {
+        connected = false
+        handler.removeCallbacks(refreshRunnable)
+        val message = (e.message ?: e.javaClass.simpleName).take(220)
+        root.removeAllViews()
+        root.setBackgroundColor(Color.rgb(150, 10, 160))
+
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(28.dp(), 40.dp(), 28.dp(), 40.dp())
+        }
+
+        box.addView(TextView(this).apply {
+            text = "DatBeo Router Monitor"
+            textSize = 28f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+        })
+        box.addView(TextView(this).apply {
+            text = title + "\n\n" + message +
+                "\n\nĐã ghi lỗi để xử lý. Hãy bấm Quay lại để đăng nhập lại."
+            textSize = 15f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            setPadding(0, 20.dp(), 0, 20.dp())
+        })
+        box.addView(Button(this).apply {
+            text = "Quay lại đăng nhập"
+            setOnClickListener { showLogin() }
+        }, LinearLayout.LayoutParams(-1, 54.dp()))
+        root.addView(box, FrameLayout.LayoutParams(-1, -1))
     }
 
     private fun pinkGradient() = GradientDrawable(
