@@ -41,3 +41,22 @@ button{cursor:pointer}
 .controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .controls select{flex:1;min-width:180px;height:42px;border-radius:10px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.13);color:#fff;padding:0 10px}
 @media(max-width:600px){.brand{font-size:34px}.grid3{gap:4px}.metric{padding:13px 4px}.device{grid-template-columns:46px 1fr}.right{grid-column:2;display:flex;gap:10px;justify-content:flex-start;text-align:left}.iconbox{width:46px;height:46px}}
+
+.camera-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.camera-tile{padding:10px;min-height:210px}
+.add-camera{display:grid;place-items:center;align-content:center;text-align:center;cursor:pointer;border-style:dashed}
+.camera-plus{width:58px;height:58px;border-radius:18px;border:2px dashed rgba(255,255,255,.65);display:grid;place-items:center;font-size:40px;line-height:1;margin-bottom:8px}
+.camera-title{font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.camera-ip{font-size:11px;opacity:.75;margin:2px 0 7px}
+.camera-video-wrap{position:relative;aspect-ratio:16/9;border-radius:14px;overflow:hidden;background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.18)}
+.camera-placeholder{position:absolute;inset:0;display:grid;place-items:center;font-size:12px;opacity:.75}
+.camera-video{width:100%;height:100%;display:none;object-fit:cover;background:#000}
+.camera-actions{display:grid;grid-template-columns:1.5fr 1fr 1fr;gap:5px;margin-top:7px}
+.camera-btn{min-height:38px;border:1px solid rgba(255,255,255,.28);border-radius:9px;background:rgba(255,255,255,.1);color:#fff;padding:4px 6px;font-size:11px}
+.camera-btn:hover{background:rgba(255,255,255,.18)}
+.camera-btn.danger{border-color:rgba(255,120,150,.35)}
+.modal-overlay{position:fixed;inset:0;background:rgba(20,0,20,.65);display:flex;align-items:center;justify-content:center;padding:16px;z-index:1000}
+.modal{width:min(560px,100%);max-height:92vh;overflow:auto;padding:16px}
+.modal-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+.modal .field{margin:6px 0}
+@media(max-width:600px){.camera-grid{grid-template-columns:1fr 1fr}.camera-actions{grid-template-columns:1fr 1fr}.camera-actions .play{grid-column:1/-1}}
