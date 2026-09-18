@@ -13,11 +13,12 @@ fi
 wget -qO /www/datbeo/index.html "$BASE/index.html"
 wget -qO /www/datbeo/style.css "$BASE/style.css"
 wget -qO /www/datbeo/app.js "$BASE/app.js"
+wget -qO /www/datbeo/logo.svg "$BASE/logo.svg"
 wget -qO /www/datbeo/hls.min.js "https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js" || echo "WARN: không tải được hls.js; native HLS fallback sẽ được dùng."
 wget -qO /www/cgi-bin/datbeo-traffic "$CGI"
 wget -qO /www/cgi-bin/datbeo-cameras "$CAM"
 
-chmod 0644 /www/datbeo/index.html /www/datbeo/style.css /www/datbeo/app.js /www/datbeo/hls.min.js
+chmod 0644 /www/datbeo/index.html /www/datbeo/style.css /www/datbeo/app.js /www/datbeo/hls.min.js /www/datbeo/logo.svg
 chmod 0755 /www/cgi-bin/datbeo-traffic /www/cgi-bin/datbeo-cameras
 
 IP="$(ip -4 addr show wt0 2>/dev/null | awk '/inet / {sub("/.*", "", $2); print $2; exit}')"
