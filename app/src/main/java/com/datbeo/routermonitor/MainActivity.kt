@@ -68,7 +68,7 @@ class MainActivity : Activity() {
                     .putString("last_crash", e.stackTraceToString())
                     .apply()
             } catch (_: Throwable) {
-                // Never throw from the crash handler.
+                // Never throw from the crash root.
             }
         }
 
@@ -158,8 +158,8 @@ class MainActivity : Activity() {
                     connected = true
                     showDashboard()
                     fetchData(true)
-                    handler.removeCallbacks(refreshRunnable)
-                    handler.postDelayed(refreshRunnable, 3000)
+                    root.removeCallbacks(refreshRunnable)
+                    root.postDelayed(refreshRunnable, 3000)
                 } catch (e: Throwable) {
                     connected = false
                     showFatalUiError("Lỗi khi mở Dashboard", e)
@@ -693,7 +693,7 @@ class MainActivity : Activity() {
 
     private fun showFatalUiError(title: String, e: Throwable) {
         connected = false
-        handler.removeCallbacks(refreshRunnable)
+        root.removeCallbacks(refreshRunnable)
         val message = (e.message ?: e.javaClass.simpleName).take(220)
         root.removeAllViews()
         root.setBackgroundColor(Color.rgb(150, 10, 160))
@@ -815,7 +815,7 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         connected = false
-        handler.removeCallbacks(refreshRunnable)
+        root.removeCallbacks(refreshRunnable)
         executor.shutdownNow()
         super.onDestroy()
     }
