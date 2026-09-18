@@ -57,7 +57,7 @@
     const j=await r.json(); if(!r.ok||j.ok===false)throw new Error(j.error||("HTTP "+r.status)); return j;
   }
 
-  function nav(){return `<div class="glass nav"><button data-p="overview">⌂<br><span class="small">Tổng quan</span></button><button data-p="web">◎<br><span class="small">Website</span></button><button data-p="stats">▥<br><span class="small">Thống kê</span></button><button data-p="settings">⚙<br><span class="small">Cài đặt</span></button></div>`;}
+  function nav(){return `<div class="glass nav"><button data-p="overview">⌂<br><span class="small">Tổng quan</span></button><button data-p="camera">▣<br><span class="small">Camera</span></button><button data-p="web">◎<br><span class="small">Website</span></button><button data-p="stats">▥<br><span class="small">Thống kê</span></button><button data-p="settings">⚙<br><span class="small">Cài đặt</span></button></div>`;}
   function bindNav(){document.querySelectorAll(".nav button").forEach(b=>b.onclick=()=>{page=b.dataset.p;saveUiState();render();setTimeout(()=>window.scrollTo(0,0),0);});}
 
   function renderLogin(msg=""){
@@ -76,11 +76,16 @@
     const rx=traffic.reduce((s,x)=>s+Number(x.rx_bytes||0),0),tx=traffic.reduce((s,x)=>s+Number(x.tx_bytes||0),0);
     app.innerHTML=`<div class="shell"><div class="container"><div class="brand">DatBeo Traffic</div><div id="status" class="status">● Đang kết nối • ${esc(lastUpdated)}</div><div style="text-align:center"><span class="pill">◎ ${esc(routerLabel)}</span></div><div class="glass grid3"><div class="metric"><div class="icon">↓</div><div class="label">Tải xuống</div><div id="total-rx" class="value">${bytes(rx)}</div></div><div class="metric"><div class="icon">↑</div><div class="label">Tải lên</div><div id="total-tx" class="value">${bytes(tx)}</div></div><div class="metric"><div class="icon">●</div><div class="label">Thiết bị</div><div id="total-devices" class="value">${traffic.length}</div></div></div>
       <div class="section-head"><h2>Thiết bị</h2></div><div id="devices">${traffic.length?traffic.map(t=>`<div class="glass card device" data-mac="${esc(t.mac)}"><div class="iconbox">${icon(deviceName(t.mac))}</div><div><div class="name">${esc(deviceName(t.mac))}</div><div class="small">${esc(deviceIp(t.mac)||t.mac)}</div><div class="small online">● Online • ${Number(t.conns||0)} kết nối</div></div><div class="right"><div>↓ ${bytes(t.rx_bytes)}</div><div>↑ ${bytes(t.tx_bytes)}</div></div></div>`).join(""):"<div class=\"glass card error\">Chưa có dữ liệu traffic.</div>"}</div>
-      <div class="section-head"><h2>Camera</h2><span class="small">${cameras.length} camera</span></div><div id="camera-section">${cameraTiles()}</div>
       <div class="section-head"><h2>Website đã truy cập</h2><span class="link" id="allweb">Xem tất cả ›</span></div><div id="overview-websites" class="glass card">${renderWebsiteRows(data.websites.slice(0,8))}</div>${nav()}</div></div>`;
     document.querySelectorAll("#devices .device").forEach(el=>el.onclick=()=>{selectedMac=el.dataset.mac;page="device";saveUiState();render();});
     document.getElementById("add-camera").onclick=()=>openCameraModal();
     document.getElementById("allweb").onclick=()=>{page="web";saveUiState();render();};
+    bindNav();
+  }
+
+  function renderCamera(){
+    app.innerHTML=`<div class="shell"><div class="container"><div class="section-head"><h2>Camera</h2><span class="small">${cameras.length} camera</span></div><div class="small camera-help">Thêm Camera → quét dải IP → chọn IP → nhập RTSP và thông tin đăng nhập.</div><div id="camera-section">${cameraTiles()}</div>${nav()}</div></div>`;
+    document.getElementById("add-camera").onclick=()=>openCameraScanner();
     bindCameraButtons();bindNav();
   }
 
@@ -112,12 +117,34 @@
     document.getElementById("logout").onclick=()=>{localStorage.removeItem("datbeo_api_key");localStorage.removeItem("datbeo_page");localStorage.removeItem("datbeo_selected_mac");key="";page="overview";selectedMac=null;renderLogin();};bindNav();
   }
 
+  function openCameraScanner(){
+    document.body.insertAdjacentHTML("beforeend",`<div id="camera-scan-modal" class="modal-overlay"><div class="modal glass"><div class="section-head"><h2>Quét Camera</h2><span id="close-camera-scan" class="link">✕</span></div><div class="small camera-help">Nhập dải IPv4 CIDR, ví dụ 10.1.1.1/24. Router sẽ tìm các thiết bị đang mở cổng RTSP phổ biến (554, 8554, 10554).</div><div class="scan-row"><input id="camera-cidr" class="field" placeholder="10.1.1.1/24" value="10.1.1.1/24"><button id="camera-scan" class="primary scan-button">Quét</button></div><div id="camera-scan-result" class="scan-results"></div></div></div>`);
+    const close=()=>document.getElementById("camera-scan-modal")?.remove();
+    document.getElementById("close-camera-scan").onclick=close;
+    document.getElementById("camera-scan").onclick=async()=>{
+      const btn=document.getElementById("camera-scan"),out=document.getElementById("camera-scan-result"),cidr=document.getElementById("camera-cidr").value.trim();
+      if(!cidr){out.innerHTML=`<div class="scan-error">Nhập dải IP cần quét.</div>`;return;}
+      btn.disabled=true;btn.textContent="Đang quét...";out.innerHTML=`<div class="scan-loading">Đang quét ${esc(cidr)}...</div>`;
+      try{
+        const j=await cameraAction({action:"scan",cidr});
+        const items=Array.isArray(j.devices)?j.devices:[];
+        if(!items.length)out.innerHTML=`<div class="muted">Không tìm thấy thiết bị có cổng RTSP mở.</div>`;
+        else{
+          out.innerHTML=`<div class="scan-summary">Tìm thấy ${items.length} thiết bị</div>`+items.map(x=>`<button class="scan-item" data-ip="${esc(x.ip)}" data-port="${esc(x.port||"554")}"><span>${esc(x.ip)}</span><span class="small">RTSP :${esc(x.port||"554")} ›</span></button>`).join("");
+          out.querySelectorAll(".scan-item").forEach(item=>item.onclick=()=>{const pre={name:"",ip:item.dataset.ip,port:item.dataset.port,path:"",username:"",_prefill:true};close();openCameraModal(pre);});
+        }
+      }catch(e){out.innerHTML=`<div class="scan-error">✕ ${esc(e.message)}</div>`;}
+      btn.disabled=false;btn.textContent="Quét";
+    };
+  }
+
   function openCameraModal(camera=null){
+    const editing=!!(camera&&camera.id);
     const c=camera||{name:"",ip:"",port:"554",path:"",username:""};
-    document.body.insertAdjacentHTML("beforeend",`<div id="camera-modal" class="modal-overlay"><div class="modal glass"><div class="section-head"><h2>${camera?"Sửa Camera":"Thêm Camera"}</h2><span id="close-camera" class="link">✕</span></div><input id="cam-name" class="field" placeholder="Tên camera" value="${esc(c.name)}"><input id="cam-ip" class="field" placeholder="Địa chỉ IP" value="${esc(c.ip)}"><input id="cam-port" class="field" placeholder="Port RTSP" value="${esc(c.port||"554")}"><input id="cam-path" class="field" placeholder="Đường dẫn RTSP, ví dụ /Streaming/Channels/101" value="${esc(c.path)}"><input id="cam-user" class="field" placeholder="Tên đăng nhập" value="${esc(c.username||"")}"><input id="cam-pass" class="field" type="password" placeholder="${camera?"Mật khẩu (để trống = giữ cũ)":"Mật khẩu"}"><div id="cam-result" class="status"></div><div class="modal-actions"><button id="cam-test" class="camera-btn test">Kiểm tra kết nối</button><button id="cam-save" class="primary" style="margin:0">Lưu Camera</button></div></div></div>`);
+    document.body.insertAdjacentHTML("beforeend",`<div id="camera-modal" class="modal-overlay"><div class="modal glass"><div class="section-head"><h2>${editing?"Sửa Camera":"Thiết lập Camera"}</h2><span id="close-camera" class="link">✕</span></div><input id="cam-name" class="field" placeholder="Tên camera" value="${esc(c.name||"")}"><input id="cam-ip" class="field" placeholder="Địa chỉ IP" value="${esc(c.ip||"")}"><input id="cam-port" class="field" placeholder="Port RTSP" value="${esc(c.port||"554")}"><input id="cam-path" class="field" placeholder="Đường dẫn RTSP, ví dụ /Streaming/Channels/101" value="${esc(c.path||"")}"><input id="cam-user" class="field" placeholder="Tên đăng nhập" value="${esc(c.username||"")}"><input id="cam-pass" class="field" type="password" placeholder="${editing?"Mật khẩu (để trống = giữ cũ)":"Mật khẩu"}"><div id="cam-result" class="status"></div><div class="modal-actions"><button id="cam-test" class="camera-btn test">Kiểm tra kết nối</button><button id="cam-save" class="primary" style="margin:0">Lưu Camera</button></div></div></div>`);
     document.getElementById("close-camera").onclick=()=>document.getElementById("camera-modal")?.remove();
     document.getElementById("cam-test").onclick=async()=>{const out=document.getElementById("cam-result");out.textContent="Đang kiểm tra...";try{const j=await cameraAction({action:"test_form",name:document.getElementById("cam-name").value.trim(),ip:document.getElementById("cam-ip").value.trim(),port:document.getElementById("cam-port").value.trim()||"554",rtsp_path:document.getElementById("cam-path").value.trim(),username:document.getElementById("cam-user").value.trim(),password:document.getElementById("cam-pass").value});out.textContent=j.ok?"✓ "+j.message+(j.streams?" • "+j.streams:""):"✕ "+(j.error||"Không kết nối");}catch(e){out.textContent="✕ "+e.message;}};
-    document.getElementById("cam-save").onclick=async()=>{const out=document.getElementById("cam-result");out.textContent="Đang lưu...";try{const id=camera?.id||"";await cameraAction({action:"save",id,name:document.getElementById("cam-name").value.trim(),ip:document.getElementById("cam-ip").value.trim(),port:document.getElementById("cam-port").value.trim()||"554",rtsp_path:document.getElementById("cam-path").value.trim(),username:document.getElementById("cam-user").value.trim(),password:document.getElementById("cam-pass").value});await loadCameras();document.getElementById("camera-modal")?.remove();render();}catch(e){out.textContent="✕ "+e.message;}};
+    document.getElementById("cam-save").onclick=async()=>{const out=document.getElementById("cam-result");out.textContent="Đang lưu...";try{const id=editing?camera.id:"";await cameraAction({action:"save",id,name:document.getElementById("cam-name").value.trim(),ip:document.getElementById("cam-ip").value.trim(),port:document.getElementById("cam-port").value.trim()||"554",rtsp_path:document.getElementById("cam-path").value.trim(),username:document.getElementById("cam-user").value.trim(),password:document.getElementById("cam-pass").value});await loadCameras();document.getElementById("camera-modal")?.remove();render();}catch(e){out.textContent="✕ "+e.message;}};
   }
 
   function bindCameraButtons(){
@@ -149,7 +176,7 @@
   }
 
   async function tick(){if(!key)return;try{await load();await loadCameras();if(userInteracting)return;if(page==="overview")updateOverview();else if(page==="device")updateDevice();const s=document.getElementById("status");if(s)s.textContent="● Đang kết nối • "+lastUpdated;}catch(e){const s=document.getElementById("status");if(s)s.textContent="● API lỗi — đang thử lại";}}
-  function render(){if(!key)return renderLogin();if(page==="overview")renderOverview();else if(page==="device")renderDevice();else if(page==="web")renderWeb();else if(page==="stats")renderStats();else renderSettings();}
+  function render(){if(!key)return renderLogin();if(page==="overview")renderOverview();else if(page==="camera")renderCamera();else if(page==="device")renderDevice();else if(page==="web")renderWeb();else if(page==="stats")renderStats();else renderSettings();}
   window.addEventListener("touchstart",()=>{userInteracting=true;},{passive:true});window.addEventListener("touchend",()=>setTimeout(()=>{userInteracting=false;saveUiState();},350),{passive:true});
   async function boot(){renderLogin();if(key){try{await load();await loadCameras();render();}catch(e){renderLogin("Phiên cũ không kết nối được: "+e.message);}}if(timer)clearInterval(timer);timer=setInterval(()=>{tick().catch(()=>{});},3000);}
   boot();
