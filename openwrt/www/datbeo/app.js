@@ -78,7 +78,6 @@
       <div class="section-head"><h2>Thiết bị</h2></div><div id="devices">${traffic.length?traffic.map(t=>`<div class="glass card device" data-mac="${esc(t.mac)}"><div class="iconbox">${icon(deviceName(t.mac))}</div><div><div class="name">${esc(deviceName(t.mac))}</div><div class="small">${esc(deviceIp(t.mac)||t.mac)}</div><div class="small online">● Online • ${Number(t.conns||0)} kết nối</div></div><div class="right"><div>↓ ${bytes(t.rx_bytes)}</div><div>↑ ${bytes(t.tx_bytes)}</div></div></div>`).join(""):"<div class=\"glass card error\">Chưa có dữ liệu traffic.</div>"}</div>
       <div class="section-head"><h2>Website đã truy cập</h2><span class="link" id="allweb">Xem tất cả ›</span></div><div id="overview-websites" class="glass card">${renderWebsiteRows(data.websites.slice(0,8))}</div>${nav()}</div></div>`;
     document.querySelectorAll("#devices .device").forEach(el=>el.onclick=()=>{selectedMac=el.dataset.mac;page="device";saveUiState();render();});
-    document.getElementById("add-camera").onclick=()=>openCameraModal();
     document.getElementById("allweb").onclick=()=>{page="web";saveUiState();render();};
     bindNav();
   }
