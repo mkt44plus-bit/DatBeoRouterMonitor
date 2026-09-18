@@ -7,7 +7,7 @@ CAM="https://raw.githubusercontent.com/mkt44plus-bit/DatBeoRouterMonitor/main/op
 mkdir -p /www/datbeo /www/datbeo/camera-stream /etc/datbeo-router-monitor
 
 if command -v apk >/dev/null 2>&1; then
-  apk -U add ffmpeg ffprobe >/dev/null 2>&1 || echo "WARN: ffmpeg/ffprobe not installed; camera test/live view will be unavailable."
+  apk -U add ffmpeg ffprobe netcat >/dev/null 2>&1 || echo "WARN: ffmpeg/ffprobe/netcat not installed; camera test/live view/scan will be unavailable."
 fi
 
 wget -qO /www/datbeo/index.html "$BASE/index.html"
