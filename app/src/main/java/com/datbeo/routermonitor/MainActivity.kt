@@ -574,7 +574,13 @@ class MainActivity : Activity() {
 
                 if (code !in 200..299) throw Exception("HTTP " + code)
 
-                val json = JSONObject(body)
+                // The router CGI had a temporary legacy format that could emit an extra comma
+                // immediately after the opening traffic array. Normalize that harmless format so
+                // older router installations do not kick the user back to the login screen.
+                val normalizedBody = body
+                    .trim()
+                    .replace(Regex("""("traffic"\\s*:\\s*)\\[\\s*,\\s*"""), "$1[")
+                val json = JSONObject(normalizedBody)
                 if (json.optString("error").isNotBlank()) {
                     throw Exception("API: " + json.optString("error"))
                 }
@@ -630,14 +636,20 @@ class MainActivity : Activity() {
 
                 runOnUiThread {
                     if (connected) {
+                        statusView.text = "● Đang kết nối"
+                        statusView.setTextColor(0xFF8BFFB0.toInt())
                         showDashboard()
                     }
                 }
             } catch (e: Exception) {
                 if (initial) {
                     runOnUiThread {
-                        toast("Lỗi kết nối: " + (e.message ?: "unknown"))
-                        showLogin()
+                        val message = e.message ?: "unknown"
+                        if (::statusView.isInitialized) {
+                            statusView.text = "● API lỗi — đang thử lại"
+                            statusView.setTextColor(0xFFFFD166.toInt())
+                        }
+                        toast("Không lấy được dữ liệu: $message")
                     }
                 }
             } finally {
