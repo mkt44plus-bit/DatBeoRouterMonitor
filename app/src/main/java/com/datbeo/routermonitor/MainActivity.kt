@@ -81,12 +81,15 @@ class MainActivity : Activity() {
         executor.execute {
             try {
                 val base = if (host.startsWith("http://") || host.startsWith("https://")) host else "http://$host"
-                val conn = (URL("$base/cgi-bin/datbeo-traffic").openConnection() as HttpURLConnection).apply {
+                val url = "$base/cgi-bin/datbeo-traffic?key=$apiKey"
+
+                val conn = (URL(url).openConnection() as HttpURLConnection).apply {
                     requestMethod = "GET"
                     connectTimeout = 5000
                     readTimeout = 7000
                     setRequestProperty("X-API-Key", apiKey)
                 }
+
                 val code = conn.responseCode
                 val body = (if (code in 200..299) conn.inputStream else conn.errorStream)
                     .bufferedReader().use { it.readText() }
@@ -123,35 +126,46 @@ class MainActivity : Activity() {
         if (raw is JSONArray) {
             for (i in 0 until raw.length()) {
                 val item = raw.opt(i)
-                if (item is JSONObject) {
-                    out.append(item.optString("mac", "-"))
-                        .append("  ↓ ").append(formatBytes(item.optLong("rx_bytes", 0)))
-                        .append("  ↑ ").append(formatBytes(item.optLong("tx_bytes", 0)))
-                        .append("  · ").append(item.optLong("conns", 0)).append(" conn\n")
-                }
+                if (item is JSONObject) appendTrafficRow(out, item)
             }
             return
         }
 
         if (raw is JSONObject) {
-            val cols = raw.optJSONArray("columns") ?: return
-            val data = raw.optJSONArray("data") ?: return
-            val macIndex = colIndex(cols, "mac")
-            val connsIndex = colIndex(cols, "conns")
-            val rxIndex = colIndex(cols, "rx_bytes")
-            val txIndex = colIndex(cols, "tx_bytes")
+            val cols = raw.optJSONArray("columns")
+            val data = raw.optJSONArray("data")
+            if (cols != null && data != null) {
+                val macIndex = colIndex(cols, "mac")
+                val connsIndex = colIndex(cols, "conns")
+                val rxIndex = firstColIndex(cols, arrayOf("rx_bytes", "download", "rx"))
+                val txIndex = firstColIndex(cols, arrayOf("tx_bytes", "upload", "tx"))
 
-            for (i in 0 until data.length()) {
-                val row = data.optJSONArray(i) ?: continue
-                val mac = if (macIndex >= 0) row.optString(macIndex) else "-"
-                val conns = if (connsIndex >= 0) row.optLong(connsIndex) else 0
-                val rx = if (rxIndex >= 0) row.optLong(rxIndex) else 0
-                val tx = if (txIndex >= 0) row.optLong(txIndex) else 0
-                out.append(mac).append("  ↓ ").append(formatBytes(rx))
-                    .append("  ↑ ").append(formatBytes(tx))
-                    .append("  · ").append(conns).append(" conn\n")
+                for (i in 0 until data.length()) {
+                    val row = data.optJSONArray(i) ?: continue
+                    val item = JSONObject()
+                    if (macIndex >= 0) item.put("mac", row.optString(macIndex))
+                    if (connsIndex >= 0) item.put("conns", row.optLong(connsIndex))
+                    if (rxIndex >= 0) item.put("rx_bytes", row.optLong(rxIndex))
+                    if (txIndex >= 0) item.put("tx_bytes", row.optLong(txIndex))
+                    appendTrafficRow(out, item)
+                }
             }
         }
+    }
+
+    private fun appendTrafficRow(out: StringBuilder, item: JSONObject) {
+        out.append(item.optString("mac", "-"))
+            .append("  ↓ ").append(formatBytes(item.optLong("rx_bytes", 0)))
+            .append("  ↑ ").append(formatBytes(item.optLong("tx_bytes", 0)))
+            .append("  · ").append(item.optLong("conns", 0)).append(" conn\n")
+    }
+
+    private fun firstColIndex(columns: JSONArray, names: Array<String>): Int {
+        for (name in names) {
+            val idx = colIndex(columns, name)
+            if (idx >= 0) return idx
+        }
+        return -1
     }
 
     private fun colIndex(columns: JSONArray, wanted: String): Int {
