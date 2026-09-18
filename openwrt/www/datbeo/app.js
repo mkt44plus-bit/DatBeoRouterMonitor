@@ -5,9 +5,19 @@
   let routerLabel = location.host;
   let data = {traffic:[],leases:[],websites:[]};
   let lastUpdated = "";
-  let page = "overview";
-  let filterIp = null;
+  let page = localStorage.getItem("datbeo_page") || "overview";
+  let filterIp = localStorage.getItem("datbeo_filter_ip") || null;
   let timer = null;
+  let userInteracting = false;
+
+  if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+
+  function saveUiState(){
+    localStorage.setItem("datbeo_page", page);
+    if(filterIp) localStorage.setItem("datbeo_filter_ip", filterIp);
+    else localStorage.removeItem("datbeo_filter_ip");
+    localStorage.setItem("datbeo_scroll_y", String(window.scrollY || 0));
+  }
 
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const bytes = n => {
@@ -44,7 +54,7 @@
       try {
         await load();
         localStorage.setItem("datbeo_api_key", key);
-        page="overview"; render();
+        page="overview"; saveUiState(); render();
       } catch(e) { renderLogin("Không kết nối được API: "+e.message); }
     };
   }
@@ -76,7 +86,9 @@
     document.querySelectorAll(".nav button").forEach(b => {
       b.onclick = () => {
         page = b.dataset.p;
+        saveUiState();
         render();
+        setTimeout(() => window.scrollTo(0, 0), 0);
       };
     });
   }
@@ -109,7 +121,7 @@
         ${nav()}
       </div></div>`;
     document.getElementById("allweb").onclick=()=>{page="web";render();};
-    document.querySelectorAll(".device").forEach(el=>el.onclick=()=>{const ip=el.dataset.ip;if(ip){filterIp=ip;page="web";render();}});
+    document.querySelectorAll(".device").forEach(el=>el.onclick=()=>{const ip=el.dataset.ip;if(ip){filterIp=ip;page="web";saveUiState();render();}});
     bindNav();
   }
 
@@ -123,8 +135,8 @@
         <div id="web-rows" class="glass card">${renderWebsiteRows(rows,200)}</div>
         ${nav()}
       </div></div>`;
-    document.getElementById("back").onclick=()=>{page="overview";filterIp=null;render();};
-    document.getElementById("filter").onchange=e=>{filterIp=e.target.value||null;render();};
+    document.getElementById("back").onclick=()=>{page="overview";filterIp=null;saveUiState();render();};
+    document.getElementById("filter").onchange=e=>{filterIp=e.target.value||null;saveUiState();render();};
     bindNav();
   }
 
@@ -213,7 +225,7 @@
       <div id="stats-rows" class="glass card">${top.length?top.map(t=>`<div class="tableline"><span class="domain">${esc(deviceName(t.mac))}</span><span>↓ ${bytes(t.rx_bytes)} • ↑ ${bytes(t.tx_bytes)}</span></div>`).join(""):'Chưa có dữ liệu.'}</div>
       ${nav()}
     </div></div>`;
-    document.getElementById("back").onclick=()=>{page="overview";render();};
+    document.getElementById("back").onclick=()=>{page="overview";saveUiState();render();};
     bindNav();
   }
 
@@ -227,7 +239,7 @@
       ${nav()}
     </div></div>`;
     document.getElementById("back").onclick=()=>{page="overview";render();};
-    document.getElementById("logout").onclick=()=>{localStorage.removeItem("datbeo_api_key");key="";renderLogin();};
+    document.getElementById("logout").onclick=()=>{localStorage.removeItem("datbeo_api_key");localStorage.removeItem("datbeo_page");localStorage.removeItem("datbeo_filter_ip");key="";page="overview";filterIp=null;renderLogin();};
     bindNav();
   }
 
@@ -243,6 +255,7 @@
     if(!key) return;
     try {
       await load();
+      if(userInteracting) return;
       if(page==="overview") updateOverviewInPlace();
       else if(page==="web") updateWebInPlace();
       else if(page==="stats") updateStatsInPlace();
@@ -255,7 +268,15 @@
     }
   }
 
+  window.addEventListener("touchstart", () => { userInteracting = true; }, {passive:true});
+  window.addEventListener("touchend", () => {
+    setTimeout(() => { userInteracting = false; saveUiState(); }, 350);
+  }, {passive:true});
+
   render();
+  const savedScroll = Number(localStorage.getItem("datbeo_scroll_y") || 0);
+  if(savedScroll > 0) setTimeout(() => window.scrollTo(0, savedScroll), 60);
+
   if(key) tick().catch(()=>{});
   if(timer) clearInterval(timer);
   timer=setInterval(tick,3000);
