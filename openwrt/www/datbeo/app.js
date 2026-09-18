@@ -56,6 +56,10 @@
     const r=await fetch(CAM_API+"?key="+encodeURIComponent(key),{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams(p).toString()});
     const j=await r.json(); if(!r.ok||j.ok===false)throw new Error(j.error||("HTTP "+r.status)); return j;
   }
+  async function cameraNetworkInfo(){
+    const r=await fetch(CAM_API+"?action=lan_info&key="+encodeURIComponent(key),{cache:"no-store"});
+    const j=await r.json(); if(!r.ok||j.ok===false)throw new Error(j.error||("HTTP "+r.status)); return j;
+  }
 
   function nav(){return `<div class="glass nav"><button data-p="overview">⌂<br><span class="small">Tổng quan</span></button><button data-p="camera">▣<br><span class="small">Camera</span></button><button data-p="web">◎<br><span class="small">Website</span></button><button data-p="stats">▥<br><span class="small">Thống kê</span></button><button data-p="settings">⚙<br><span class="small">Cài đặt</span></button></div>`;}
   function bindNav(){document.querySelectorAll(".nav button").forEach(b=>b.onclick=()=>{page=b.dataset.p;saveUiState();render();setTimeout(()=>window.scrollTo(0,0),0);});}
@@ -117,20 +121,22 @@
   }
 
   function openCameraScanner(){
-    document.body.insertAdjacentHTML("beforeend",`<div id="camera-scan-modal" class="modal-overlay"><div class="modal glass"><div class="section-head"><h2>Quét Camera</h2><span id="close-camera-scan" class="link">✕</span></div><div class="small camera-help">Nhập dải IPv4 CIDR, ví dụ 10.1.1.1/24. Router sẽ quét các IP đang hoạt động và hiển thị RTSP hoặc HTTP.</div><div class="scan-row"><input id="camera-cidr" class="field" placeholder="10.1.1.1/24" value="10.1.1.1/24"><button id="camera-scan" class="primary scan-button">Quét</button></div><div id="camera-scan-result" class="scan-results"></div></div></div>`);
+    document.body.insertAdjacentHTML("beforeend",`<div id="camera-scan-modal" class="modal-overlay"><div class="modal glass"><div class="section-head"><h2>Quét thiết bị trong router</h2><span id="close-camera-scan" class="link">✕</span></div><div class="small camera-help">Điện thoại đang truy cập router qua NetBird. Router sẽ quét mạng LAN phía sau nó để tìm các thiết bị đang hoạt động; thiết bị có RTSP sẽ hiện RTSP, thiết bị còn lại hiện HTTP.</div><div class="small" id="camera-lan-info">Đang lấy dải mạng của router...</div><div class="scan-row"><input id="camera-cidr" class="field" placeholder="Ví dụ 10.1.1.1/24" value=""><button id="camera-scan" class="primary scan-button">Quét</button></div><div id="camera-scan-result" class="scan-results"></div></div></div>`);
     const close=()=>document.getElementById("camera-scan-modal")?.remove();
+
     document.getElementById("close-camera-scan").onclick=close;
-    document.getElementById("camera-scan").onclick=async()=>{
-      const btn=document.getElementById("camera-scan"),out=document.getElementById("camera-scan-result"),cidr=document.getElementById("camera-cidr").value.trim();
-      if(!cidr){out.innerHTML=`<div class="scan-error">Nhập dải IP cần quét.</div>`;return;}
+    const info=document.getElementById("camera-lan-info"),scanInput=document.getElementById("camera-cidr"),scanButton=document.getElementById("camera-scan");
+    cameraNetworkInfo().then(j=>{scanInput.value=j.lan_cidr||"10.1.1.1/24";info.textContent=(j.lan_cidr?"Mạng LAN: "+j.lan_cidr:"Không lấy được dải LAN")+" • NetBird: "+(j.netbird||"n/a");}).catch(e=>{info.textContent="Không lấy được mạng LAN tự động: "+e.message;});
+    scanButton.onclick=async()=>{
+      const btn=scanButton,out=document.getElementById("camera-scan-result"),cidr=scanInput.value.trim()||"auto";
       btn.disabled=true;btn.textContent="Đang quét...";out.innerHTML=`<div class="scan-loading">Đang quét ${esc(cidr)}...</div>`;
       try{
         const j=await cameraAction({action:"scan",cidr});
         const items=Array.isArray(j.devices)?j.devices:[];
-        if(!items.length)out.innerHTML=`<div class="muted">Không tìm thấy thiết bị có cổng RTSP mở.</div>`;
+        if(!items.length)out.innerHTML=`<div class="muted">Không phát hiện thiết bị hoạt động trong dải này.</div>`;
         else{
-          out.innerHTML=`<div class="scan-summary">Tìm thấy ${items.length} thiết bị</div>`+items.map(x=>{const proto=String(x.protocol||"HTTP").toUpperCase(),port=x.port||"";return `<button class="scan-item" data-ip="${esc(x.ip)}" data-protocol="${esc(proto)}" data-port="${esc(port)}"><span>${esc(x.ip)}</span><span class="scan-proto ${proto==="RTSP"?"rtsp":"http"}">${esc(proto)}${port?" :"+esc(port):""} ›</span></button>`;}).join("");
-          out.querySelectorAll(".scan-item").forEach(item=>item.onclick=()=>{const pre={name:"",ip:item.dataset.ip,port:item.dataset.protocol==="RTSP"?(item.dataset.port||"554"):"554",path:"",username:"",_prefill:true};close();openCameraModal(pre);});
+          out.innerHTML=`<div class="scan-summary">Tìm thấy ${items.length} thiết bị</div>`+items.map(x=>{const proto=String(x.protocol||"HTTP").toUpperCase(),port=x.port||"",label=x.name||x.mac||"Thiết bị";return `<button class="scan-item" data-ip="${esc(x.ip)}" data-protocol="${esc(proto)}" data-port="${esc(port)}"><span><strong>${esc(label)}</strong><br><span class="small">${esc(x.ip)}${x.mac?" • "+esc(x.mac):""}</span></span><span class="scan-proto ${proto==="RTSP"?"rtsp":"http"}">${esc(proto)}${port?" :"+esc(port):""} ›</span></button>`;}).join("");
+          out.querySelectorAll(".scan-item").forEach(item=>item.onclick=()=>{const proto=item.dataset.protocol,ip=item.dataset.ip,port=item.dataset.port; if(proto==="RTSP"){const pre={name:"",ip,port:port||"554",path:"",username:"",_prefill:true};close();openCameraModal(pre);} else {const u=port?("http://"+ip+":"+port):("http://"+ip);window.open(u,"_blank");}});
         }
       }catch(e){out.innerHTML=`<div class="scan-error">✕ ${esc(e.message)}</div>`;}
       btn.disabled=false;btn.textContent="Quét";
