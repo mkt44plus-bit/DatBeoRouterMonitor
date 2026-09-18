@@ -72,3 +72,5 @@ button{cursor:pointer}
 .scan-item:hover{background:rgba(255,255,255,.16)}
 .camera-actions{margin-top:auto}
 @media(max-width:600px){.scan-row{grid-template-columns:1fr}.scan-button{margin-top:0}}
+
+.scan-proto{display:inline-block;font-size:11px;font-weight:700;padding:4px 7px;border-radius:999px;border:1px solid rgba(255,255,255,.25);white-space:nowrap}.scan-proto.rtsp{background:rgba(139,255,176,.12);color:#8bffb0}.scan-proto.http{background:rgba(255,255,255,.08);color:#fff}
