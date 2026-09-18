@@ -125,7 +125,7 @@ scan)
     SIP="$((N/16777216)).$(((N/65536)%256)).$(((N/256)%256)).$((N%256))"
     ALIVE=0
 
-    NEIGH="$(ip neigh show dev "$LAN_DEV" "$SIP" 2>/dev/null | head -n 1 || true)"
+    NEIGH="$(ip neigh show "$SIP" dev "$LAN_DEV" 2>/dev/null | head -n 1 || true)"
     case "$NEIGH" in
       *" FAILED"*|*" INCOMPLETE"*) ;;
       "") ;;
