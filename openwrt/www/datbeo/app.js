@@ -179,8 +179,16 @@
 
   async function tick(){
     if(!key) return;
-    try { await load(); if(page==="overview"||page==="web"||page==="stats") render(); }
-    catch(e){
+    try {
+      await load();
+      if(page==="overview"||page==="web"||page==="stats"){
+        // Polling used to rebuild the entire page every 3 seconds. That reset
+        // the WebView scroll position and made the UI appear to jump home.
+        const scrollY = window.scrollY;
+        render();
+        requestAnimationFrame(() => window.scrollTo(0, scrollY));
+      }
+    } catch(e){
       const s=document.querySelector(".status");
       if(s) s.textContent="● API lỗi — đang thử lại";
     }
