@@ -5,8 +5,6 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.text.InputType
 import android.view.Gravity
 import android.view.View
@@ -36,7 +34,6 @@ data class SiteVisit(
 
 class MainActivity : Activity() {
     private val executor = Executors.newSingleThreadExecutor()
-    private val handler = Handler(Looper.getMainLooper())
 
     private lateinit var root: FrameLayout
     private lateinit var ipInput: EditText
@@ -55,7 +52,7 @@ class MainActivity : Activity() {
         override fun run() {
             if (connected) {
                 fetchData(false)
-                handler.postDelayed(this, 3000)
+                root.postDelayed(this, 3000)
             }
         }
     }
@@ -100,7 +97,7 @@ class MainActivity : Activity() {
 
     private fun showLogin() {
         connected = false
-        handler.removeCallbacks(refreshRunnable)
+        root.removeCallbacks(refreshRunnable)
         root.removeAllViews()
 
         val screen = LinearLayout(this).apply {
