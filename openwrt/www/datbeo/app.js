@@ -88,12 +88,12 @@
     app.innerHTML=`
       <div class="shell"><div class="container">
         <div class="brand">DatBeo Traffic</div>
-        <div class="status">● Đang kết nối • ${esc(lastUpdated)}</div>
+        <div id="status" class="status">● Đang kết nối • ${esc(lastUpdated)}</div>
         <div style="text-align:center"><span class="pill">◎ ${esc(routerLabel)}</span></div>
         <div class="glass grid3">
-          <div class="metric"><div class="icon">↓</div><div class="label">Tải xuống</div><div class="value">${bytes(totalRx)}</div></div>
-          <div class="metric"><div class="icon">↑</div><div class="label">Tải lên</div><div class="value">${bytes(totalTx)}</div></div>
-          <div class="metric"><div class="icon">●</div><div class="label">Thiết bị</div><div class="value">${traffic.length}</div></div>
+          <div class="metric"><div class="icon">↓</div><div class="label">Tải xuống</div><div id="total-rx" class="value">${bytes(totalRx)}</div></div>
+          <div class="metric"><div class="icon">↑</div><div class="label">Tải lên</div><div id="total-tx" class="value">${bytes(totalTx)}</div></div>
+          <div class="metric"><div class="icon">●</div><div class="label">Thiết bị</div><div id="total-devices" class="value">${traffic.length}</div></div>
         </div>
         <div class="section-head"><h2>Thiết bị</h2></div>
         <div id="devices">
@@ -105,7 +105,7 @@
           </div>`).join("") : '<div class="glass card error">Chưa có dữ liệu traffic.</div>'}
         </div>
         <div class="section-head"><h2>Website đã truy cập</h2><span class="link" id="allweb">Xem tất cả ›</span></div>
-        <div class="glass card">${renderWebsiteRows(data.websites.slice(0,8))}</div>
+        <div id="overview-websites" class="glass card">${renderWebsiteRows(data.websites.slice(0,8))}</div>
         ${nav()}
       </div></div>`;
     document.getElementById("allweb").onclick=()=>{page="web";render();};
@@ -120,7 +120,7 @@
       <div class="shell"><div class="container">
         <div class="section-head"><h2>Website</h2><span class="link" id="back">‹ Tổng quan</span></div>
         <div class="glass card controls"><select id="filter"><option value="">Tất cả thiết bị</option>${ips.map(ip=>`<option value="${esc(ip)}" ${filterIp===ip?"selected":""}>${esc(ip)}</option>`).join("")}</select></div>
-        <div class="glass card">${renderWebsiteRows(rows,200)}</div>
+        <div id="web-rows" class="glass card">${renderWebsiteRows(rows,200)}</div>
         ${nav()}
       </div></div>`;
     document.getElementById("back").onclick=()=>{page="overview";filterIp=null;render();};
@@ -143,12 +143,74 @@
     </div>`;
   }
 
+  function updateOverviewInPlace(){
+    const traffic=[...data.traffic].sort((a,b)=>
+      (Number(b.rx_bytes)+Number(b.tx_bytes))-(Number(a.rx_bytes)+Number(a.tx_bytes))
+    );
+    const totalRx=traffic.reduce((s,x)=>s+Number(x.rx_bytes||0),0);
+    const totalTx=traffic.reduce((s,x)=>s+Number(x.tx_bytes||0),0);
+
+    const set=(id,value)=>{
+      const el=document.getElementById(id);
+      if(el) el.textContent=value;
+    };
+    set("total-rx",bytes(totalRx));
+    set("total-tx",bytes(totalTx));
+    set("total-devices",String(traffic.length));
+    set("status","● Đang kết nối • "+lastUpdated);
+
+    const devices=document.getElementById("devices");
+    if(devices){
+      devices.innerHTML=traffic.length ? traffic.map(t=>`
+        <div class="glass card device" data-ip="${esc(deviceIp(t.mac))}">
+          <div class="iconbox">${icon(deviceName(t.mac))}</div>
+          <div>
+            <div class="name">${esc(deviceName(t.mac))}</div>
+            <div class="small">${esc(deviceIp(t.mac)||t.mac)}</div>
+            <div class="small online">● Online • ${Number(t.conns||0)} kết nối</div>
+          </div>
+          <div class="right"><div>↓ ${bytes(t.rx_bytes)}</div><div>↑ ${bytes(t.tx_bytes)}</div></div>
+        </div>`).join("") :
+        '<div class="glass card error">Chưa có dữ liệu traffic.</div>';
+      document.querySelectorAll("#devices .device").forEach(el=>{
+        el.onclick=()=>{
+          const ip=el.dataset.ip;
+          if(ip){filterIp=ip;page="web";render();}
+        };
+      });
+    }
+
+    const ow=document.getElementById("overview-websites");
+    if(ow) ow.innerHTML=renderWebsiteRows(data.websites.slice(0,8));
+  }
+
+  function updateWebInPlace(){
+    const rows=filterIp ? data.websites.filter(x=>x.ip===filterIp) : data.websites;
+    const box=document.getElementById("web-rows");
+    if(box) box.innerHTML=renderWebsiteRows(rows,200);
+  }
+
+  function updateStatsInPlace(){
+    const traffic=data.traffic;
+    const top=[...traffic].sort((a,b)=>
+      Number(b.rx_bytes)+Number(b.tx_bytes)-Number(a.rx_bytes)-Number(a.tx_bytes)
+    );
+    const box=document.getElementById("stats-rows");
+    if(box){
+      box.innerHTML=top.length ? top.map(t=>`
+        <div class="tableline">
+          <span class="domain">${esc(deviceName(t.mac))}</span>
+          <span>↓ ${bytes(t.rx_bytes)} • ↑ ${bytes(t.tx_bytes)}</span>
+        </div>`).join("") : 'Chưa có dữ liệu.';
+    }
+  }
+
   function renderStats(){
     const traffic=data.traffic;
     const top=[...traffic].sort((a,b)=>Number(b.rx_bytes)+Number(b.tx_bytes)-Number(a.rx_bytes)-Number(a.tx_bytes));
     app.innerHTML=`<div class="shell"><div class="container">
       <div class="section-head"><h2>Thống kê</h2><span class="link" id="back">‹ Tổng quan</span></div>
-      <div class="glass card">${top.length?top.map(t=>`<div class="tableline"><span class="domain">${esc(deviceName(t.mac))}</span><span>↓ ${bytes(t.rx_bytes)} • ↑ ${bytes(t.tx_bytes)}</span></div>`).join(""):'Chưa có dữ liệu.'}</div>
+      <div id="stats-rows" class="glass card">${top.length?top.map(t=>`<div class="tableline"><span class="domain">${esc(deviceName(t.mac))}</span><span>↓ ${bytes(t.rx_bytes)} • ↑ ${bytes(t.tx_bytes)}</span></div>`).join(""):'Chưa có dữ liệu.'}</div>
       ${nav()}
     </div></div>`;
     document.getElementById("back").onclick=()=>{page="overview";render();};
@@ -181,15 +243,14 @@
     if(!key) return;
     try {
       await load();
-      if(page==="overview"||page==="web"||page==="stats"){
-        // Polling used to rebuild the entire page every 3 seconds. That reset
-        // the WebView scroll position and made the UI appear to jump home.
-        const scrollY = window.scrollY;
-        render();
-        requestAnimationFrame(() => window.scrollTo(0, scrollY));
-      }
+      if(page==="overview") updateOverviewInPlace();
+      else if(page==="web") updateWebInPlace();
+      else if(page==="stats") updateStatsInPlace();
+
+      const s=document.getElementById("status");
+      if(s) s.textContent="● Đang kết nối • "+lastUpdated;
     } catch(e){
-      const s=document.querySelector(".status");
+      const s=document.getElementById("status");
       if(s) s.textContent="● API lỗi — đang thử lại";
     }
   }
