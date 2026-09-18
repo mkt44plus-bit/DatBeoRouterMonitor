@@ -579,7 +579,7 @@ class MainActivity : Activity() {
                 // older router installations do not kick the user back to the login screen.
                 val normalizedBody = body
                     .trim()
-                    .replace(Regex("""("traffic"\\s*:\\s*)\\[\\s*,\\s*"""), "$1[")
+                    .replace(Regex("""("traffic"\s*:\s*)\[\s*,\s*""")) { match -> "${match.groupValues[1]}[" }
                 val json = JSONObject(normalizedBody)
                 if (json.optString("error").isNotBlank()) {
                     throw Exception("API: " + json.optString("error"))
