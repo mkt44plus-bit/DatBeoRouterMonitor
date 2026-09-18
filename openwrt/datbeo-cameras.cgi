@@ -6,9 +6,10 @@ API_KEY="$(cat "$API_FILE" 2>/dev/null || true)"
 REQ_KEY="$HTTP_X_API_KEY"
 QUERY="$QUERY_STRING"
 
-mkdir -p /etc/datbeo-router-monitor "$BASE"
+mkdir -p /etc/datbeo-router-monitor /etc/config "$BASE"
 [ -f "$DB" ] || : > "$DB"
-chmod 600 "$DB"
+[ -f /etc/config/datbeo_camera ] || : > /etc/config/datbeo_camera
+chmod 600 "$DB" /etc/config/datbeo_camera
 
 json_escape() {
   printf "%s" "$1" | sed 's/\\/\\\\/g; s/"/\\\"/g'
@@ -77,6 +78,67 @@ rtsp_url() {
 }
 
 case "$ACTION" in
+scan)
+  CIDR="$(decode "$(param cidr "$BODY")")"
+  command -v nc >/dev/null 2>&1 || { printf '{"ok":false,"error":"Router chưa có nc để quét IP"}\n'; exit 0; }
+  case "$CIDR" in */*) ;; *) printf '{"ok":false,"error":"Dải IP phải có dạng CIDR, ví dụ 10.1.1.1/24"}\n'; exit 0 ;; esac
+  IP0="${CIDR%/*}"; PREFIX="${CIDR#*/}"
+  case "$PREFIX" in *[!0-9]*|"") printf '{"ok":false,"error":"CIDR không hợp lệ"}\n'; exit 0 ;; esac
+  [ "$PREFIX" -ge 16 ] 2>/dev/null && [ "$PREFIX" -le 32 ] 2>/dev/null || { printf '{"ok":false,"error":"Chỉ hỗ trợ IPv4 /16 đến /32"}\n'; exit 0; }
+  OLDIFS="$IFS"; IFS=.
+  set -- $IP0
+  IFS="$OLDIFS"
+  [ "$#" -eq 4 ] || { printf '{"ok":false,"error":"IP không hợp lệ"}\n'; exit 0; }
+  for O in "$@"; do
+    case "$O" in *[!0-9]*|"") printf '{"ok":false,"error":"IP không hợp lệ"}\n'; exit 0 ;; esac
+    [ "$O" -ge 0 ] 2>/dev/null && [ "$O" -le 255 ] 2>/dev/null || { printf '{"ok":false,"error":"IP không hợp lệ"}\n'; exit 0; }
+  done
+  A="$1"; B="$2"; C="$3"; D="$4"
+  IPNUM=$((A*16777216+B*65536+C*256+D))
+  HOSTBITS=$((32-PREFIX))
+  BLOCK=$((2**HOSTBITS))
+  [ "$BLOCK" -le 1024 ] || { printf '{"ok":false,"error":"Dải quá lớn; giới hạn 1024 địa chỉ mỗi lần quét"}\n'; exit 0; }
+  NET=$((IPNUM-(IPNUM % BLOCK)))
+  START="$NET"; END=$((NET+BLOCK-1))
+  if [ "$PREFIX" -le 30 ]; then START=$((NET+1)); END=$((END-1)); fi
+
+  OUT="/tmp/datbeo-scan-$.txt"
+  : > "$OUT"
+  worker() {
+    N="$1"
+    while [ "$N" -le "$2" ]; do
+      SIP="$((N/16777216)).$(((N/65536)%256)).$(((N/256)%256)).$((N%256))"
+      for PORT in 554 8554 10554; do
+        if nc -z -w 1 "$SIP" "$PORT" >/dev/null 2>&1; then
+          printf "%s|%s\n" "$SIP" "$PORT" >> "$OUT"
+          break
+        fi
+      done
+      N=$((N+1))
+    done
+  }
+
+  WORKERS=16
+  RANGE=$((END-START+1))
+  [ "$RANGE" -lt "$WORKERS" ] && WORKERS="$RANGE"
+  W=0
+  while [ "$W" -lt "$WORKERS" ]; do
+    worker "$((START+W))" "$END" &
+    W=$((W+1))
+  done
+  wait
+
+  printf '{"ok":true,"devices":['
+  FIRST=1
+  sort -u "$OUT" 2>/dev/null | while IFS='|' read -r SIP SPORT; do
+    [ -n "$SIP" ] || continue
+    [ "$FIRST" -eq 1 ] || printf ","
+    FIRST=0
+    printf '{"ip":"%s","port":"%s"}' "$(json_escape "$SIP")" "$(json_escape "$SPORT")"
+  done
+  printf '],"cidr":"%s"}\n' "$(json_escape "$CIDR")"
+  rm -f "$OUT"
+  ;;
 list)
   printf '{"cameras":['
   FIRST=1
