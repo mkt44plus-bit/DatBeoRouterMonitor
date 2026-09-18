@@ -10,6 +10,9 @@
   let selectedMac = localStorage.getItem("datbeo_selected_mac") || null;
   let timer = null;
   let userInteracting = false;
+  let previousTraffic = new Map();
+  let speedByMac = new Map();
+  let previousTrafficTime = 0;
 
   if ("scrollRestoration" in history) history.scrollRestoration = "manual";
 
@@ -28,6 +31,12 @@
     const u=["B","KB","MB","GB","TB"]; let i=0;
     while(n>=1024 && i<u.length-1){n/=1024;i++;}
     return i===0 ? Math.round(n)+" B" : n.toFixed(1)+" "+u[i];
+  };
+  const speed = bps => {
+    const n = Math.max(0, Number(bps)||0);
+    if(n >= 1000000) return (n/1000000).toFixed(1)+" Mbps";
+    if(n >= 1000) return (n/1000).toFixed(0)+" Kbps";
+    return Math.round(n)+" bps";
   };
   const deviceName = (mac) => {
     const x = data.leases.find(v => String(v.mac||"").toLowerCase()===String(mac||"").toLowerCase());
@@ -76,8 +85,36 @@
     if(!r.ok) throw new Error("HTTP "+r.status);
     const j = safeJson(text);
     if(j.error) throw new Error(j.error);
+
+    const nextTraffic = Array.isArray(j.traffic) ? j.traffic : [];
+    const now = Date.now();
+    const dt = previousTrafficTime > 0 ? Math.max(0.5, (now - previousTrafficTime) / 1000) : 0;
+    const nextSpeed = new Map();
+
+    nextTraffic.forEach(t => {
+      const mac = String(t.mac||"").toLowerCase();
+      const old = previousTraffic.get(mac);
+      const rx = Number(t.rx_bytes||0);
+      const tx = Number(t.tx_bytes||0);
+      if(old && dt > 0){
+        nextSpeed.set(mac, {
+          rxBps: Math.max(0, rx - old.rx) * 8 / dt,
+          txBps: Math.max(0, tx - old.tx) * 8 / dt
+        });
+      } else {
+        nextSpeed.set(mac, {rxBps:0, txBps:0});
+      }
+    });
+
+    previousTraffic = new Map(nextTraffic.map(t => [
+      String(t.mac||"").toLowerCase(),
+      {rx:Number(t.rx_bytes||0), tx:Number(t.tx_bytes||0)}
+    ]));
+    previousTrafficTime = now;
+    speedByMac = nextSpeed;
+
     data = {
-      traffic: Array.isArray(j.traffic)?j.traffic:[],
+      traffic: nextTraffic,
       leases: Array.isArray(j.leases)?j.leases:[],
       websites: Array.isArray(j.websites)?j.websites:[]
     };
@@ -113,7 +150,7 @@
         <div class="section-head"><h2>Thiết bị</h2></div>
         <div id="devices">
         ${traffic.length ? traffic.map(t=>`
-          <div class="glass card device" data-ip="${esc(deviceIp(t.mac))}" data-mac="${esc(t.mac)}">
+          <div class="glass card device" data-mac="${esc(t.mac)}">
             <div class="iconbox">${icon(deviceName(t.mac))}</div>
             <div><div class="name">${esc(deviceName(t.mac))}</div><div class="small">${esc(deviceIp(t.mac)||t.mac)}</div><div class="small online">● Online • ${Number(t.conns||0)} kết nối</div></div>
             <div class="right"><div>↓ ${bytes(t.rx_bytes)}</div><div>↑ ${bytes(t.tx_bytes)}</div></div>
@@ -132,42 +169,51 @@
     return data.traffic.find(t => String(t.mac||"").toLowerCase() === String(selectedMac||"").toLowerCase()) || null;
   }
 
+  function currentDevice(){
+    return data.traffic.find(t => String(t.mac||"").toLowerCase() === String(selectedMac||"").toLowerCase()) || null;
+  }
+
   function renderDevice(){
     const d=currentDevice();
     if(!d){ page="overview"; selectedMac=null; saveUiState(); return renderOverview(); }
-    const all=[...data.traffic].sort((a,b)=>(deviceName(a.mac)+" "+deviceIp(a.mac)).localeCompare(deviceName(b.mac)+" "+deviceIp(b.mac),"vi"));
+    const name=deviceName(d.mac);
     const ip=deviceIp(d.mac);
+    const mac=d.mac;
+    const sp=speedByMac.get(String(mac||"").toLowerCase()) || {rxBps:0,txBps:0};
     const sites=data.websites.filter(x=>x.ip===ip);
+
     app.innerHTML=`
       <div class="shell"><div class="container">
-        <div class="section-head"><h2>Thiết bị</h2><span class="link" id="device-back">‹ Tổng quan</span></div>
-        <div class="glass card">
-          <div class="small">Tìm kiếm thiết bị</div>
-          <input id="device-search" class="field" style="margin:6px 0 8px" placeholder="Tên hoặc IP..." autocomplete="off">
-          <select id="device-select" style="width:100%;height:44px;border-radius:10px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.13);color:#fff;padding:0 10px">
-            ${all.map(x=>`<option value="${esc(x.mac)}" ${String(x.mac).toLowerCase()===String(d.mac).toLowerCase()?"selected":""}>${esc(deviceName(x.mac))} • ${esc(deviceIp(x.mac)||x.mac)}</option>`).join("")}
-          </select>
+        <div class="section-head">
+          <h2>${esc(name)}</h2>
+          <span class="link" id="device-back">‹ Thiết bị</span>
         </div>
+
         <div class="glass card">
-          <div class="device">
-            <div class="iconbox">${icon(deviceName(d.mac))}</div>
-            <div><div id="device-name" class="name">${esc(deviceName(d.mac))}</div><div id="device-ip" class="small">${esc(ip||d.mac)}</div><div class="small online">● Online • ${Number(d.conns||0)} kết nối</div></div>
-            <div class="right"><div id="device-rx">↓ ${bytes(d.rx_bytes)}</div><div id="device-tx">↑ ${bytes(d.tx_bytes)}</div></div>
-          </div>
+          <div class="small muted">Thông tin thiết bị</div>
+          <div class="tableline"><span>Tên</span><span class="domain">${esc(name)}</span></div>
+          <div class="tableline"><span>MAC</span><span class="domain">${esc(mac)}</span></div>
+          <div class="tableline"><span>IP</span><span class="domain">${esc(ip || "Chưa có")}</span></div>
         </div>
-        <div class="section-head"><h2>Website đã truy cập</h2></div>
-        <div id="device-sites" class="glass card">${renderWebsiteRows(sites,200)}</div>
+
+        <div class="glass card grid3">
+          <div class="metric"><div class="icon">↓</div><div class="label">Download</div><div id="device-rx-total" class="value">${bytes(d.rx_bytes)}</div></div>
+          <div class="metric"><div class="icon">↑</div><div class="label">Upload</div><div id="device-tx-total" class="value">${bytes(d.tx_bytes)}</div></div>
+          <div class="metric"><div class="icon">●</div><div class="label">Kết nối</div><div id="device-conns" class="value">${Number(d.conns||0)}</div></div>
+        </div>
+
+        <div class="glass card grid3">
+          <div class="metric"><div class="icon">↓</div><div class="label">Tốc độ tải xuống</div><div id="device-rx-speed" class="value">${speed(sp.rxBps)}</div></div>
+          <div class="metric"><div class="icon">↑</div><div class="label">Tốc độ tải lên</div><div id="device-tx-speed" class="value">${speed(sp.txBps)}</div></div>
+          <div class="metric"><div class="icon">◉</div><div class="label">Trạng thái</div><div id="device-online" class="value online">Online</div></div>
+        </div>
+
+        <div class="section-head"><h2>Website</h2><span class="small">gần đây</span></div>
+        <div id="device-sites" class="glass card">${renderWebsiteRows(sites,50)}</div>
         ${nav()}
       </div></div>`;
+
     document.getElementById("device-back").onclick=()=>{ page="overview"; selectedMac=null; saveUiState(); render(); };
-    const select=document.getElementById("device-select");
-    const search=document.getElementById("device-search");
-    function applySearch(){
-      const q=search.value.trim().toLowerCase();
-      [...select.options].forEach(o=>{ o.hidden=!!q && !o.text.toLowerCase().includes(q); });
-    }
-    search.oninput=applySearch;
-    select.onchange=e=>{ selectedMac=e.target.value; saveUiState(); renderDevice(); };
     bindNav();
   }
 
@@ -175,13 +221,14 @@
     const d=currentDevice();
     if(!d){ page="overview"; selectedMac=null; saveUiState(); return renderOverview(); }
     const set=(id,value)=>{ const el=document.getElementById(id); if(el) el.textContent=value; };
-    set("device-name",deviceName(d.mac));
-    set("device-ip",deviceIp(d.mac)||d.mac);
-    set("device-rx","↓ "+bytes(d.rx_bytes));
-    set("device-tx","↑ "+bytes(d.tx_bytes));
-    const sites=data.websites.filter(x=>x.ip===deviceIp(d.mac));
+    const sp=speedByMac.get(String(d.mac||"").toLowerCase()) || {rxBps:0,txBps:0};
+    set("device-rx-total",bytes(d.rx_bytes));
+    set("device-tx-total",bytes(d.tx_bytes));
+    set("device-conns",String(Number(d.conns||0)));
+    set("device-rx-speed",speed(sp.rxBps));
+    set("device-tx-speed",speed(sp.txBps));
     const box=document.getElementById("device-sites");
-    if(box) box.innerHTML=renderWebsiteRows(sites,200);
+    if(box) box.innerHTML=renderWebsiteRows(data.websites.filter(x=>x.ip===deviceIp(d.mac)),50);
   }
   function renderWeb(){
     const ips=[...new Set(data.websites.map(x=>x.ip).filter(Boolean))];
@@ -232,7 +279,7 @@
     const devices=document.getElementById("devices");
     if(devices){
       devices.innerHTML=traffic.length ? traffic.map(t=>`
-        <div class="glass card device" data-ip="${esc(deviceIp(t.mac))}">
+        <div class="glass card device" data-mac="${esc(t.mac)}">
           <div class="iconbox">${icon(deviceName(t.mac))}</div>
           <div>
             <div class="name">${esc(deviceName(t.mac))}</div>
