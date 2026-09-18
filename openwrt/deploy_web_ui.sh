@@ -20,6 +20,6 @@ wget -qO /www/cgi-bin/datbeo-cameras "$CAM"
 chmod 0644 /www/datbeo/index.html /www/datbeo/style.css /www/datbeo/app.js /www/datbeo/hls.min.js
 chmod 0755 /www/cgi-bin/datbeo-traffic /www/cgi-bin/datbeo-cameras
 
-IP="$(ip -4 addr show wt0 2>/dev/null | awk '/inet / {sub(/\\/.*/, "", $2); print $2; exit}')"
+IP="$(ip -4 addr show wt0 2>/dev/null | awk '/inet / {sub("/.*", "", $2); print $2; exit}')"
 echo "DatBeo Web UI installed: http://${IP:-100.81.163.26}/datbeo/"
 echo "Camera RTSP support: $([ -x "$(command -v ffmpeg 2>/dev/null || true)" ] && echo ready || echo not-ready)"
