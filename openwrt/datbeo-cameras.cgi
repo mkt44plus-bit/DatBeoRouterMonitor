@@ -9,7 +9,15 @@ dec(){ printf "%b" "$(printf "%s" "$1" | sed 's/+/ /g; s/%/\\x/g')"; }
 
 param(){ printf "%s" "$2" | tr "&" "\n" | sed -n "s/^$1=//p" | head -n1; }
 
+API_FILE="/etc/datbeo-router-monitor/api_key"
+API_KEY="$(cat "$API_FILE" 2>/dev/null || true)"
+REQ_KEY="${HTTP_X_API_KEY:-}"
+case "$REQ_KEY" in "") REQ_KEY="$(printf "%s" "$QUERY_STRING" | tr "&" "\n" | sed -n "s/^key=//p" | head -n1)";; esac
 printf "Content-Type: application/json\r\nCache-Control: no-store\r\n\r\n"
+if [ -z "$API_KEY" ] || [ "$REQ_KEY" != "$API_KEY" ]; then
+  printf '{ "ok": false, "error": "unauthorized" }\n'
+  exit
+fi
 BODY=""
 [ "${CONTENT_LENGTH:-0}" -gt 0 ] 2>/dev/null && BODY="$(dd bs=1 count="$CONTENT_LENGTH" 2>/dev/null)"
 [ -n "$BODY" ] || BODY="$QUERY_STRING"
