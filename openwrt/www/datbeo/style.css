@@ -59,7 +59,7 @@ button{cursor:pointer}
 .modal{width:min(560px,100%);max-height:92vh;overflow:auto;padding:16px}
 .modal-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
 .modal .field{margin:6px 0}
-@media(max-width:600px){.camera-grid{grid-template-columns:1fr 1fr}.camera-actions{grid-template-columns:1fr 1fr}.camera-actions .play{grid-column:1/-1}}
+@media(max-width:600px){.camera-grid{grid-template-columns:1fr 1fr}.camera-actions{grid-template-columns:1.5fr 1fr 1fr}}
 
 .camera-help{line-height:1.45;margin:0 4px 8px}
 .scan-row{display:grid;grid-template-columns:1fr 110px;gap:8px;align-items:center}
