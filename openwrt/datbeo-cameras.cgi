@@ -124,6 +124,7 @@ save)
   uci set datbeo_camera.@camera[$S].username="$U0"
   [ -n "$PW0" ] && uci set datbeo_camera.@camera[$S].password="$PW0"
   uci commit datbeo_camera
+  chmod 600 /etc/config/datbeo_camera 2>/dev/null || true
   printf '{"ok":true,"id":"%s"}\n' "$(json_escape "$ID")"
   ;;
 delete)
@@ -132,6 +133,7 @@ delete)
     if [ "$ID0" = "$ID" ]; then
       uci delete datbeo_camera.@camera[$I]
       uci commit datbeo_camera
+      chmod 600 /etc/config/datbeo_camera 2>/dev/null || true
       PIDFILE="/tmp/datbeo-camera-$ID.pid"
       if [ -f "$PIDFILE" ]; then kill "$(cat "$PIDFILE")" 2>/dev/null || true; rm -f "$PIDFILE"; fi
       rm -rf "$BASE/$ID"
