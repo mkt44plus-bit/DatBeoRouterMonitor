@@ -72,6 +72,15 @@
     lastUpdated = new Date().toLocaleTimeString("vi-VN",{hour12:false});
   }
 
+  function bindNav(){
+    document.querySelectorAll(".nav button").forEach(b => {
+      b.onclick = () => {
+        page = b.dataset.p;
+        render();
+      };
+    });
+  }
+
   function renderOverview(){
     const traffic=[...data.traffic].sort((a,b)=>(Number(b.rx_bytes)+Number(b.tx_bytes))-(Number(a.rx_bytes)+Number(a.tx_bytes)));
     const totalRx=traffic.reduce((s,x)=>s+Number(x.rx_bytes||0),0);
@@ -101,6 +110,7 @@
       </div></div>`;
     document.getElementById("allweb").onclick=()=>{page="web";render();};
     document.querySelectorAll(".device").forEach(el=>el.onclick=()=>{const ip=el.dataset.ip;if(ip){filterIp=ip;page="web";render();}});
+    bindNav();
   }
 
   function renderWeb(){
@@ -115,6 +125,7 @@
       </div></div>`;
     document.getElementById("back").onclick=()=>{page="overview";filterIp=null;render();};
     document.getElementById("filter").onchange=e=>{filterIp=e.target.value||null;render();};
+    bindNav();
   }
 
   function renderWebsiteRows(rows,limit=8){
@@ -141,6 +152,7 @@
       ${nav()}
     </div></div>`;
     document.getElementById("back").onclick=()=>{page="overview";render();};
+    bindNav();
   }
 
   function renderSettings(){
@@ -154,6 +166,7 @@
     </div></div>`;
     document.getElementById("back").onclick=()=>{page="overview";render();};
     document.getElementById("logout").onclick=()=>{localStorage.removeItem("datbeo_api_key");key="";renderLogin();};
+    bindNav();
   }
 
   function render(){
@@ -174,8 +187,7 @@
   }
 
   render();
-  if(key){
-    tick().catch(()=>{});
-    timer=setInterval(tick,3000);
-  }
+  if(key) tick().catch(()=>{});
+  if(timer) clearInterval(timer);
+  timer=setInterval(tick,3000);
 })();
