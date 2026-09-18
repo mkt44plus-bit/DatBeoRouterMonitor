@@ -142,6 +142,25 @@ delete)
   done
   printf '{"ok":false,"error":"Không tìm thấy camera"}\n'
   ;;
+test_form)
+  FFP="$(command -v ffprobe 2>/dev/null || true)"
+  [ -n "$FFP" ] || { printf '{"ok":false,"error":"Router chưa có ffprobe. Chạy lại deploy."}\n'; exit 0; }
+  CAM_NAME="$(decode "$(param name "$BODY")")"
+  CAM_IP="$(decode "$(param ip "$BODY")")"
+  CAM_PORT="$(decode "$(param port "$BODY")")"; [ -n "$CAM_PORT" ] || CAM_PORT=554
+  CAM_PATH="$(decode "$(param rtsp_path "$BODY")")"
+  CAM_USER="$(decode "$(param username "$BODY")")"
+  CAM_PASS="$(decode "$(param password "$BODY")")"
+  [ -n "$CAM_IP" ] && [ -n "$CAM_PATH" ] || { printf '{"ok":false,"error":"Thiếu IP hoặc đường dẫn RTSP"}\n'; exit 0; }
+  URL="$(rtsp_url)"
+  OUT="$(timeout 8 "$FFP" -v error -rtsp_transport tcp -rw_timeout 6000000 -show_entries stream=codec_name,codec_type,width,height -of compact=p=0:nk=1 "$URL" 2>/dev/null || true)"
+  if [ -n "$OUT" ]; then
+    SAFE="$(printf "%s" "$OUT" | tr '\n' ';' | cut -c1-500)"
+    printf '{"ok":true,"message":"Kết nối RTSP OK","streams":"%s"}\n' "$(json_escape "$SAFE")"
+  else
+    printf '{"ok":false,"error":"Không kết nối được RTSP hoặc camera không phản hồi"}\n'
+  fi
+  ;;
 test)
   FFP="$(command -v ffprobe 2>/dev/null || true)"
   [ -n "$ID" ] || { printf '{"ok":false,"error":"Thiếu id"}\n'; exit 0; }
