@@ -7,6 +7,7 @@
   let lastUpdated = "";
   let page = localStorage.getItem("datbeo_page") || "overview";
   let filterIp = localStorage.getItem("datbeo_filter_ip") || null;
+  let selectedMac = localStorage.getItem("datbeo_selected_mac") || null;
   let timer = null;
   let userInteracting = false;
 
@@ -16,6 +17,8 @@
     localStorage.setItem("datbeo_page", page);
     if(filterIp) localStorage.setItem("datbeo_filter_ip", filterIp);
     else localStorage.removeItem("datbeo_filter_ip");
+    if(selectedMac) localStorage.setItem("datbeo_selected_mac", selectedMac);
+    else localStorage.removeItem("datbeo_selected_mac");
     localStorage.setItem("datbeo_scroll_y", String(window.scrollY || 0));
   }
 
@@ -110,7 +113,7 @@
         <div class="section-head"><h2>Thiết bị</h2></div>
         <div id="devices">
         ${traffic.length ? traffic.map(t=>`
-          <div class="glass card device" data-ip="${esc(deviceIp(t.mac))}">
+          <div class="glass card device" data-ip="${esc(deviceIp(t.mac))}" data-mac="${esc(t.mac)}">
             <div class="iconbox">${icon(deviceName(t.mac))}</div>
             <div><div class="name">${esc(deviceName(t.mac))}</div><div class="small">${esc(deviceIp(t.mac)||t.mac)}</div><div class="small online">● Online • ${Number(t.conns||0)} kết nối</div></div>
             <div class="right"><div>↓ ${bytes(t.rx_bytes)}</div><div>↑ ${bytes(t.tx_bytes)}</div></div>
@@ -125,6 +128,61 @@
     bindNav();
   }
 
+  function currentDevice(){
+    return data.traffic.find(t => String(t.mac||"").toLowerCase() === String(selectedMac||"").toLowerCase()) || null;
+  }
+
+  function renderDevice(){
+    const d=currentDevice();
+    if(!d){ page="overview"; selectedMac=null; saveUiState(); return renderOverview(); }
+    const all=[...data.traffic].sort((a,b)=>(deviceName(a.mac)+" "+deviceIp(a.mac)).localeCompare(deviceName(b.mac)+" "+deviceIp(b.mac),"vi"));
+    const ip=deviceIp(d.mac);
+    const sites=data.websites.filter(x=>x.ip===ip);
+    app.innerHTML=`
+      <div class="shell"><div class="container">
+        <div class="section-head"><h2>Thiết bị</h2><span class="link" id="device-back">‹ Tổng quan</span></div>
+        <div class="glass card">
+          <div class="small">Tìm kiếm thiết bị</div>
+          <input id="device-search" class="field" style="margin:6px 0 8px" placeholder="Tên hoặc IP..." autocomplete="off">
+          <select id="device-select" style="width:100%;height:44px;border-radius:10px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.13);color:#fff;padding:0 10px">
+            ${all.map(x=>`<option value="${esc(x.mac)}" ${String(x.mac).toLowerCase()===String(d.mac).toLowerCase()?"selected":""}>${esc(deviceName(x.mac))} • ${esc(deviceIp(x.mac)||x.mac)}</option>`).join("")}
+          </select>
+        </div>
+        <div class="glass card">
+          <div class="device">
+            <div class="iconbox">${icon(deviceName(d.mac))}</div>
+            <div><div id="device-name" class="name">${esc(deviceName(d.mac))}</div><div id="device-ip" class="small">${esc(ip||d.mac)}</div><div class="small online">● Online • ${Number(d.conns||0)} kết nối</div></div>
+            <div class="right"><div id="device-rx">↓ ${bytes(d.rx_bytes)}</div><div id="device-tx">↑ ${bytes(d.tx_bytes)}</div></div>
+          </div>
+        </div>
+        <div class="section-head"><h2>Website đã truy cập</h2></div>
+        <div id="device-sites" class="glass card">${renderWebsiteRows(sites,200)}</div>
+        ${nav()}
+      </div></div>`;
+    document.getElementById("device-back").onclick=()=>{ page="overview"; selectedMac=null; saveUiState(); render(); };
+    const select=document.getElementById("device-select");
+    const search=document.getElementById("device-search");
+    function applySearch(){
+      const q=search.value.trim().toLowerCase();
+      [...select.options].forEach(o=>{ o.hidden=!!q && !o.text.toLowerCase().includes(q); });
+    }
+    search.oninput=applySearch;
+    select.onchange=e=>{ selectedMac=e.target.value; saveUiState(); renderDevice(); };
+    bindNav();
+  }
+
+  function updateDeviceInPlace(){
+    const d=currentDevice();
+    if(!d){ page="overview"; selectedMac=null; saveUiState(); return renderOverview(); }
+    const set=(id,value)=>{ const el=document.getElementById(id); if(el) el.textContent=value; };
+    set("device-name",deviceName(d.mac));
+    set("device-ip",deviceIp(d.mac)||d.mac);
+    set("device-rx","↓ "+bytes(d.rx_bytes));
+    set("device-tx","↑ "+bytes(d.tx_bytes));
+    const sites=data.websites.filter(x=>x.ip===deviceIp(d.mac));
+    const box=document.getElementById("device-sites");
+    if(box) box.innerHTML=renderWebsiteRows(sites,200);
+  }
   function renderWeb(){
     const ips=[...new Set(data.websites.map(x=>x.ip).filter(Boolean))];
     const rows=filterIp ? data.websites.filter(x=>x.ip===filterIp) : data.websites;
@@ -186,8 +244,8 @@
         '<div class="glass card error">Chưa có dữ liệu traffic.</div>';
       document.querySelectorAll("#devices .device").forEach(el=>{
         el.onclick=()=>{
-          const ip=el.dataset.ip;
-          if(ip){filterIp=ip;page="web";render();}
+          const mac=el.dataset.mac;
+          if(mac){selectedMac=mac;page="device";saveUiState();render();}
         };
       });
     }
@@ -246,6 +304,7 @@
   function render(){
     if(!key) return renderLogin();
     if(page==="overview") renderOverview();
+    else if(page==="device") renderDevice();
     else if(page==="web") renderWeb();
     else if(page==="stats") renderStats();
     else renderSettings();
@@ -257,6 +316,7 @@
       await load();
       if(userInteracting) return;
       if(page==="overview") updateOverviewInPlace();
+      else if(page==="device") updateDeviceInPlace();
       else if(page==="web") updateWebInPlace();
       else if(page==="stats") updateStatsInPlace();
 
