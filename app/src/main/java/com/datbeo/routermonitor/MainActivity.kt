@@ -21,8 +21,8 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        window.statusBarColor = Color.rgb(190, 12, 111)
-        window.navigationBarColor = Color.rgb(190, 12, 111)
+        window.statusBarColor = Color.rgb(23, 63, 85)
+        window.navigationBarColor = Color.rgb(23, 63, 85)
 
         webView = WebView(this).apply {
             setBackgroundColor(Color.TRANSPARENT)
