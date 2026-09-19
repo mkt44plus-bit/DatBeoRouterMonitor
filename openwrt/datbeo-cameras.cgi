@@ -97,6 +97,7 @@ scan)
   IP0="${CIDR%/*}"; PREFIX="${CIDR#*/}"
   case "$PREFIX" in *[!0-9]*|"") printf '{"ok":false,"error":"CIDR không hợp lệ"}\n'; exit 0 ;; esac
   [ "$PREFIX" -ge 16 ] 2>/dev/null && [ "$PREFIX" -le 32 ] 2>/dev/null || { printf '{"ok":false,"error":"Chỉ hỗ trợ IPv4 /16 đến /32"}\n'; exit 0; }
+
   OLDIFS="$IFS"; IFS=.
   set -- $IP0
   IFS="$OLDIFS"
@@ -105,56 +106,97 @@ scan)
     case "$O" in *[!0-9]*|"") printf '{"ok":false,"error":"IP không hợp lệ"}\n'; exit 0 ;; esac
     [ "$O" -ge 0 ] 2>/dev/null && [ "$O" -le 255 ] 2>/dev/null || { printf '{"ok":false,"error":"IP không hợp lệ"}\n'; exit 0; }
   done
+
   A="$1"; B="$2"; C="$3"; D="$4"
   IPNUM=$((A*16777216+B*65536+C*256+D))
   HOSTBITS=$((32-PREFIX))
   BLOCK=1
   HB=0
-  while [ "$HB" -lt "$HOSTBITS" ]; do BLOCK=$((BLOCK*2)); HB=$((HB+1)); done
+  while [ "$HB" -lt "$HOSTBITS" ]; do
+    BLOCK=$((BLOCK*2))
+    HB=$((HB+1))
+  done
   [ "$BLOCK" -le 1024 ] || { printf '{"ok":false,"error":"Dải quá lớn; giới hạn 1024 địa chỉ mỗi lần quét"}\n'; exit 0; }
+
   NET=$((IPNUM-(IPNUM % BLOCK)))
   START="$NET"; END=$((NET+BLOCK-1))
-  if [ "$PREFIX" -le 30 ]; then START=$((NET+1)); END=$((END-1)); fi
+  if [ "$PREFIX" -le 30 ]; then
+    START=$((NET+1))
+    END=$((END-1))
+  fi
 
   LEASE_FILES="/tmp/dhcp.leases /var/dhcp.leases"
+  PING_OUT="/tmp/datbeo-ping-$$.txt"
+  CANDIDATES="/tmp/datbeo-candidates-$$.txt"
   OUT="/tmp/datbeo-scan-$$.txt"
+  : > "$PING_OUT"
+  : > "$CANDIDATES"
   : > "$OUT"
 
-  scan_host() {
+  ip_from_num() {
     N="$1"
-    SIP="$((N/16777216)).$(((N/65536)%256)).$(((N/256)%256)).$((N%256))"
-    ALIVE=0
+    printf '%s.%s.%s.%s' "$((N/16777216))" "$(((N/65536)%256))" "$(((N/256)%256))" "$((N%256))"
+  }
 
-    NEIGH="$(ip neigh show "$SIP" dev "$LAN_DEV" 2>/dev/null | head -n 1 || true)"
-    case "$NEIGH" in
-      *" FAILED"*|*" INCOMPLETE"*) ;;
-      "") ;;
-      *) ALIVE=1 ;;
-    esac
+  # Phase 1: discover active LAN hosts quickly.
+  # Do not probe 9 ports on every address; first make the router learn ARP.
+  ping_host() {
+    N="$1"
+    SIP="$(ip_from_num "$N")"
+    if ping -c 1 -W 1 "$SIP" >/dev/null 2>&1; then
+      printf '%s\n' "$SIP" >> "$PING_OUT"
+    fi
+  }
 
-    ping -c 1 -W 1 "$SIP" >/dev/null 2>&1 && ALIVE=1
+  WORKERS=32
+  RANGE=$((END-START+1))
+  [ "$RANGE" -lt "$WORKERS" ] && WORKERS="$RANGE"
+  [ "$WORKERS" -lt 1 ] && WORKERS=1
 
+  NEXT="$START"
+  while [ "$NEXT" -le "$END" ]; do
+    W=0
+    while [ "$W" -lt "$WORKERS" ] && [ $((NEXT+W)) -le "$END" ]; do
+      ping_host "$((NEXT+W))" &
+      W=$((W+1))
+    done
+    wait
+    NEXT=$((NEXT+WORKERS))
+  done
+
+  # Ping success is definitive. A neighbor entry with a MAC is also kept
+  # so devices that answer ARP but block ICMP are still discovered.
+  cat "$PING_OUT" >> "$CANDIDATES"
+  ip neigh show dev "$LAN_DEV" 2>/dev/null |
+    awk '/^[0-9]+\./ && / lladdr / && $NF !~ /^(FAILED|INCOMPLETE)$/ {print $1}' >> "$CANDIDATES"
+
+  SORTED="/tmp/datbeo-candidates-sorted-$$.txt"
+  sort -u "$CANDIDATES" > "$SORTED" 2>/dev/null || cp "$CANDIDATES" "$SORTED"
+
+  # Phase 2: probe ports only on hosts actually discovered.
+  scan_host() {
+    SIP="$1"
     RTSP_PORT=""
     HTTP_PORT=""
 
     for PORT in 554 8554 10554; do
       if nc -z -w 1 "$SIP" "$PORT" >/dev/null 2>&1; then
         RTSP_PORT="$PORT"
-        ALIVE=1
         break
       fi
     done
 
-    for PORT in 80 443 8000 8080 8081 8888; do
-      if nc -z -w 1 "$SIP" "$PORT" >/dev/null 2>&1; then
-        HTTP_PORT="$PORT"
-        ALIVE=1
-        break
-      fi
-    done
+    # Only classify as HTTP when no RTSP service was found.
+    if [ -z "$RTSP_PORT" ]; then
+      for PORT in 80 443 8000 8080 8081 8888; do
+        if nc -z -w 1 "$SIP" "$PORT" >/dev/null 2>&1; then
+          HTTP_PORT="$PORT"
+          break
+        fi
+      done
+    fi
 
-    [ "$ALIVE" -eq 1 ] || return 0
-
+    NEIGH="$(ip neigh show "$SIP" dev "$LAN_DEV" 2>/dev/null | head -n 1 || true)"
     MAC=""
     case "$NEIGH" in
       *" lladdr "*)
@@ -184,18 +226,17 @@ scan)
   }
 
   WORKERS=16
-  RANGE=$((END-START+1))
-  [ "$RANGE" -lt "$WORKERS" ] && WORKERS="$RANGE"
-  NEXT="$START"
-  while [ "$NEXT" -le "$END" ]; do
-    W=0
-    while [ "$W" -lt "$WORKERS" ] && [ $((NEXT+W)) -le "$END" ]; do
-      scan_host "$((NEXT+W))" &
-      W=$((W+1))
-    done
-    wait
-    NEXT=$((NEXT+WORKERS))
-  done
+  COUNT=0
+  while IFS= read -r SIP; do
+    [ -n "$SIP" ] || continue
+    scan_host "$SIP" &
+    COUNT=$((COUNT+1))
+    if [ "$COUNT" -ge "$WORKERS" ]; then
+      wait
+      COUNT=0
+    fi
+  done < "$SORTED"
+  [ "$COUNT" -gt 0 ] && wait
 
   printf '{"ok":true,"devices":['
   FIRST=1
@@ -206,7 +247,8 @@ scan)
     printf '{"ip":"%s","protocol":"%s","port":"%s","mac":"%s","name":"%s"}'       "$(json_escape "$SIP")" "$(json_escape "$PROTO")" "$(json_escape "$SPORT")" "$(json_escape "$MAC")" "$(json_escape "$NAME")"
   done < "$OUT"
   printf '],"cidr":"%s","lan_dev":"%s"}\n' "$(json_escape "$CIDR")" "$(json_escape "$LAN_DEV")"
-  rm -f "$OUT"
+
+  rm -f "$PING_OUT" "$CANDIDATES" "$SORTED" "$OUT"
   ;;
 list)
   printf '{"cameras":['
