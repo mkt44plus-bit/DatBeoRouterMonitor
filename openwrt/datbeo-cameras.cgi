@@ -415,7 +415,6 @@ stream)
     printf '{"ok":false,"error":"RTSP đã kết nối nhưng HLS chưa khởi tạo sau 8 giây. Có thể camera dùng codec/path mà browser HLS không hỗ trợ."}\n'
   fi
   ;;
-  ;;
 stop)
   PIDFILE="/tmp/datbeo-camera-$ID.pid"
   if [ -f "$PIDFILE" ]; then kill "$(cat "$PIDFILE")" 2>/dev/null || true; rm -f "$PIDFILE"; fi
