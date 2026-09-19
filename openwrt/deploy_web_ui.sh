@@ -8,6 +8,33 @@ mkdir -p /www/datbeo /www/datbeo/camera-stream /etc/datbeo-router-monitor
 
 if command -v apk >/dev/null 2>&1; then
   apk -U add ffmpeg ffprobe libffmpeg-full netcat >/dev/null 2>&1 || echo "WARN: ffmpeg/ffprobe/netcat not installed; camera test/live view/scan will be unavailable."
+
+  # OpenWrt's stock FFmpeg disables patented native HEVC/H.265 decoding.
+  # DatBeo publishes a matching ARMv7 build with software HEVC enabled.
+  # Install it only when the stock binary does not expose the software decoder.
+  if command -v ffmpeg >/dev/null 2>&1 && ! ffmpeg -hide_banner -decoders 2>/dev/null | grep -qE '^[[:space:]]*V.*[[:space:]]hevc[[:space:]]'; then
+    HEVC_URL="https://github.com/mkt44plus-bit/DatBeoRouterMonitor/releases/download/ffmpeg-hevc-armv7/ffmpeg-hevc-armv7.tar.gz"
+    TMP_HEVC="/tmp/datbeo-ffmpeg-hevc.tar.gz"
+    TMP_HEVC_DIR="/tmp/datbeo-ffmpeg-hevc"
+    rm -rf "$TMP_HEVC_DIR"
+    mkdir -p "$TMP_HEVC_DIR"
+    if wget -qO "$TMP_HEVC" "$HEVC_URL"; then
+      tar -xzf "$TMP_HEVC" -C "$TMP_HEVC_DIR"
+      if ls "$TMP_HEVC_DIR"/ffmpeg-*.apk "$TMP_HEVC_DIR"/ffprobe-*.apk "$TMP_HEVC_DIR"/libffmpeg-full-*.apk >/dev/null 2>&1; then
+        apk del ffmpeg ffprobe libffmpeg-full >/dev/null 2>&1 || true
+        if apk add --allow-untrusted "$TMP_HEVC_DIR"/libffmpeg-full-*.apk "$TMP_HEVC_DIR"/ffmpeg-*.apk "$TMP_HEVC_DIR"/ffprobe-*.apk >/dev/null 2>&1 &&
+           ffmpeg -hide_banner -decoders 2>/dev/null | grep -qE '^[[:space:]]*V.*[[:space:]]hevc[[:space:]]'; then
+          echo "DatBeo FFmpeg: software HEVC ready"
+        else
+          echo "WARN: custom HEVC FFmpeg install failed; restoring OpenWrt FFmpeg."
+          apk add ffmpeg ffprobe libffmpeg-full >/dev/null 2>&1 || true
+        fi
+      fi
+    else
+      echo "WARN: custom HEVC FFmpeg release not available yet; keeping OpenWrt FFmpeg."
+    fi
+    rm -rf "$TMP_HEVC_DIR" "$TMP_HEVC"
+  fi
 fi
 
 wget -qO /www/datbeo/index.html "$BASE/index.html"
