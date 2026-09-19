@@ -358,7 +358,7 @@ test_form)
   CAM_PASS="$(decode "$(param password "$BODY")")"
   [ -n "$CAM_IP" ] && [ -n "$CAM_PATH" ] || { printf '{"ok":false,"error":"Thiếu IP hoặc đường dẫn RTSP"}\n'; exit 0; }
   URL="$(rtsp_url)"
-  OUT="$(timeout 8 "$FFP" -v error -rtsp_transport tcp -rw_timeout 6000000 -show_entries stream=codec_name,codec_type,width,height -of compact=p=0:nk=1 "$URL" 2>/dev/null || true)"
+  OUT="$(timeout 8 "$FFP" -v error -hwaccel none -rtsp_transport tcp -rw_timeout 6000000 -analyzeduration 10000000 -probesize 10000000 -show_entries stream=codec_name,codec_type,width,height -of compact=p=0:nk=1 "$URL" 2>/dev/null || true)"
   if [ -n "$OUT" ]; then
     SAFE="$(printf "%s" "$OUT" | tr '\n' ';' | cut -c1-500)"
     printf '{"ok":true,"message":"Kết nối RTSP OK","streams":"%s"}\n' "$(json_escape "$SAFE")"
@@ -372,7 +372,7 @@ test)
   [ -n "$FFP" ] || { printf '{"ok":false,"error":"Router chưa có ffprobe. Chạy lại deploy."}\n'; exit 0; }
   load_camera || { printf '{"ok":false,"error":"Không tìm thấy camera"}\n'; exit 0; }
   URL="$(rtsp_url)"
-  OUT="$(timeout 8 "$FFP" -v error -rtsp_transport tcp -rw_timeout 6000000 -show_entries stream=codec_name,codec_type,width,height -of compact=p=0:nk=1 "$URL" 2>/dev/null || true)"
+  OUT="$(timeout 8 "$FFP" -v error -hwaccel none -rtsp_transport tcp -rw_timeout 6000000 -analyzeduration 10000000 -probesize 10000000 -show_entries stream=codec_name,codec_type,width,height -of compact=p=0:nk=1 "$URL" 2>/dev/null || true)"
   if [ -n "$OUT" ]; then
     SAFE="$(printf "%s" "$OUT" | tr '\n' ';' | cut -c1-500)"
     printf '{"ok":true,"message":"Kết nối RTSP OK","streams":"%s"}\n' "$(json_escape "$SAFE")"
@@ -394,20 +394,22 @@ stream)
   rm -f "$DIR"/*.m3u8 "$DIR"/*.ts "$DIR"/*.mp4 "$LOGFILE" 2>/dev/null || true
   URL="$(rtsp_url)"
 
-  # Probe the RTSP stream first so failures are actionable and codec can be selected.
+  # Probe RTSP with software HEVC when available; never require the router V4L2-M2M decoder.
+  # libffmpeg-full is installed by deploy_web_ui.sh. -hwaccel none prevents a broken
+  # hevc_v4l2m2m device from being selected during RTSP stream-info probing.
   FFP="$(command -v ffprobe 2>/dev/null || true)"
   CODEC=""
   if [ -n "$FFP" ]; then
-    CODEC="$(timeout 8 "$FFP" -v error -rtsp_transport tcp -rw_timeout 6000000       -select_streams v:0 -show_entries stream=codec_name -of default=nw=1:nk=1       "$URL" 2>/dev/null | head -n 1 || true)"
+    CODEC="$(timeout 8 "$FFP" -v error -hwaccel none -rtsp_transport tcp -rw_timeout 6000000 -analyzeduration 10000000 -probesize 10000000       -select_streams v:0 -show_entries stream=codec_name -of default=nw=1:nk=1       "$URL" 2>/dev/null | head -n 1 || true)"
   fi
 
   case "$CODEC" in
     h264)
-      "$FFM" -hide_banner -loglevel error -rtsp_transport tcp -i "$URL"         -map 0:v:0 -an -c:v copy -f hls -hls_time 1 -hls_list_size 3         -hls_flags delete_segments+append_list+omit_endlist         -hls_segment_filename "$DIR/seg_%03d.ts" "$DIR/index.m3u8"         >"$LOGFILE" 2>&1 </dev/null &
+      "$FFM" -hide_banner -loglevel error -hwaccel none -rtsp_transport tcp -analyzeduration 10000000 -probesize 10000000 -i "$URL"         -map 0:v:0 -an -c:v copy -f hls -hls_time 1 -hls_list_size 3         -hls_flags delete_segments+append_list+omit_endlist         -hls_segment_filename "$DIR/seg_%03d.ts" "$DIR/index.m3u8"         >"$LOGFILE" 2>&1 </dev/null &
       ;;
     hevc|h265)
       # Keep video copy to avoid CPU-heavy ARMv7 transcoding; use fMP4 HLS for HEVC.
-      "$FFM" -hide_banner -loglevel error -rtsp_transport tcp -i "$URL"         -map 0:v:0 -an -c:v copy -f hls -hls_segment_type fmp4         -hls_fmp4_init_filename init.mp4 -hls_time 1 -hls_list_size 3         -hls_flags delete_segments+append_list+omit_endlist         -hls_segment_filename "$DIR/seg_%03d.m4s" "$DIR/index.m3u8"         >"$LOGFILE" 2>&1 </dev/null &
+      "$FFM" -hide_banner -loglevel error -hwaccel none -rtsp_transport tcp -analyzeduration 10000000 -probesize 10000000 -i "$URL"         -map 0:v:0 -an -c:v copy -f hls -hls_segment_type fmp4         -hls_fmp4_init_filename init.mp4 -hls_time 1 -hls_list_size 3         -hls_flags delete_segments+append_list+omit_endlist         -hls_segment_filename "$DIR/seg_%03d.m4s" "$DIR/index.m3u8"         >"$LOGFILE" 2>&1 </dev/null &
       ;;
     "")
       printf '{"ok":false,"error":"Không đọc được RTSP stream. Kiểm tra username/password và RTSP path."}\n'
@@ -415,7 +417,7 @@ stream)
       ;;
     *)
       # Unknown codec: try MPEG-TS HLS with stream copy first.
-      "$FFM" -hide_banner -loglevel error -rtsp_transport tcp -i "$URL"         -map 0:v:0 -an -c:v copy -f hls -hls_time 1 -hls_list_size 3         -hls_flags delete_segments+append_list+omit_endlist         -hls_segment_filename "$DIR/seg_%03d.ts" "$DIR/index.m3u8"         >"$LOGFILE" 2>&1 </dev/null &
+      "$FFM" -hide_banner -loglevel error -hwaccel none -rtsp_transport tcp -analyzeduration 10000000 -probesize 10000000 -i "$URL"         -map 0:v:0 -an -c:v copy -f hls -hls_time 1 -hls_list_size 3         -hls_flags delete_segments+append_list+omit_endlist         -hls_segment_filename "$DIR/seg_%03d.ts" "$DIR/index.m3u8"         >"$LOGFILE" 2>&1 </dev/null &
       ;;
   esac
 
