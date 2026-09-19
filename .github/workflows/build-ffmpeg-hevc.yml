@@ -1,0 +1,75 @@
+name: Build FFmpeg HEVC for OpenWrt
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/build-ffmpeg-hevc.yml"
+      - "openwrt/ffmpeg/**"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download OpenWrt 25.12.5 SDK
+        run: |
+          set -eu
+          URL="https://downloads.openwrt.org/releases/25.12.5/targets/ipq40xx/generic/openwrt-sdk-25.12.5-ipq40xx-generic_gcc-14.3.0_musl_eabi.Linux-x86_64.tar.zst"
+          wget -q "$URL" -O sdk.tar.zst
+          mkdir sdk
+          tar --zstd -xf sdk.tar.zst -C sdk --strip-components=1
+
+      - name: Update package feeds
+        working-directory: sdk
+        run: |
+          ./scripts/feeds update packages
+          ./scripts/feeds install ffmpeg
+
+      - name: Configure patented FFmpeg
+        working-directory: sdk
+        run: |
+          cat > .config <<'EOF'
+          CONFIG_TARGET_ipq40xx=y
+          CONFIG_TARGET_ipq40xx_generic=y
+          CONFIG_BUILD_PATENTED=y
+          CONFIG_PACKAGE_ffmpeg=y
+          CONFIG_PACKAGE_ffprobe=y
+          CONFIG_PACKAGE_libffmpeg-full=y
+          EOF
+          make defconfig
+
+      - name: Build FFmpeg packages
+        working-directory: sdk
+        run: |
+          make package/ffmpeg/compile -j2 V=s
+
+      - name: Collect packages
+        working-directory: sdk
+        run: |
+          set -eu
+          mkdir -p ../dist
+          find bin/packages -type f -name 'ffmpeg-*.apk' -exec cp {} ../dist/ \;
+          find bin/packages -type f -name 'ffprobe-*.apk' -exec cp {} ../dist/ \;
+          find bin/packages -type f -name 'libffmpeg-full-*.apk' -exec cp {} ../dist/ \;
+          ls -lh ../dist
+          test -n "$(find ../dist -type f -name 'ffmpeg-*.apk' -print -quit)"
+          test -n "$(find ../dist -type f -name 'ffprobe-*.apk' -print -quit)"
+          test -n "$(find ../dist -type f -name 'libffmpeg-full-*.apk' -print -quit)"
+          tar -C ../dist -czf ../ffmpeg-hevc-armv7.tar.gz *.apk
+
+      - name: Publish FFmpeg HEVC release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ffmpeg-hevc-armv7
+          name: FFmpeg HEVC ARMv7
+          prerelease: true
+          make_latest: false
+          files: ffmpeg-hevc-armv7.tar.gz
+          body: |
+            OpenWrt 25.12.5 ipq40xx/generic ARMv7 FFmpeg 6.1.4.
+            Built with CONFIG_BUILD_PATENTED=y so the native software HEVC/H.265 decoder is available.
+            Intended for DatBeoRouterMonitor camera RTSP/HLS relay.
