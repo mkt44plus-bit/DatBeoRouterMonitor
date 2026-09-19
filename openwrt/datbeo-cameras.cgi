@@ -20,7 +20,9 @@ decode() {
 }
 
 cred_escape() {
-  printf "%s" "$1" | sed -e 's/%/%25/g' -e 's/@/%40/g' -e 's/:/%3A/g' -e 's/#/%23/g' -e 's/?/%3F/g' -e 's/ /%20/g'
+  # Percent-encode RTSP user/password so reserved characters cannot alter the URL.
+  # Encode percent first to avoid double-encoding generated escape sequences.
+  printf "%s" "$1" | sed     -e 's/%/%25/g'     -e 's/@/%40/g'     -e 's/:/%3A/g'     -e 's/#/%23/g'     -e 's/?/%3F/g'     -e 's/\\//%5C/g'     -e 's#/#%2F#g'     -e 's/&/%26/g'     -e 's/=/%3D/g'     -e 's/+/%2B/g'     -e 's/;/%3B/g'     -e 's/ /%20/g'
 }
 
 param() {
