@@ -35,6 +35,9 @@ jobs:
           cat > .config <<'EOF'
           CONFIG_TARGET_ipq40xx=y
           CONFIG_TARGET_ipq40xx_generic=y
+          CONFIG_ALL=n
+          CONFIG_ALL_KMODS=n
+          CONFIG_ALL_NONSHARED=n
           CONFIG_BUILD_PATENTED=y
           CONFIG_PACKAGE_ffmpeg=y
           CONFIG_PACKAGE_ffprobe=y
