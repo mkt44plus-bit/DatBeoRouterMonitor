@@ -79,14 +79,6 @@ rtsp_url() {
   esac
 }
 
-case "$ACTION" in
-lan_info)
-  LAN_DEV="$(uci -q get network.lan.device 2>/dev/null || uci -q get network.lan.ifname 2>/dev/null || printf br-lan)"
-  LAN_ADDR="$(ip -4 addr show dev "$LAN_DEV" 2>/dev/null | awk '/inet /{print $2; exit}')"
-  NB_ADDR="$(ip -4 addr show dev wt0 2>/dev/null | awk '/inet /{print $2; exit}')"
-  [ -n "$LAN_ADDR" ] || LAN_ADDR=""
-  printf '{"ok":true,"lan_dev":"%s","lan_cidr":"%s","netbird":"%s"}\n' "$(json_escape "$LAN_DEV")" "$(json_escape "$LAN_ADDR")" "$(json_escape "$NB_ADDR")"
-  ;;
 camera_profile() {
   M="$1"
   M="$(printf "%s" "$M" | tr '[:lower:]' '[:upper:]' | tr -d ':.-')"
@@ -104,6 +96,14 @@ camera_profile() {
   esac
 }
 
+case "$ACTION" in
+lan_info)
+  LAN_DEV="$(uci -q get network.lan.device 2>/dev/null || uci -q get network.lan.ifname 2>/dev/null || printf br-lan)"
+  LAN_ADDR="$(ip -4 addr show dev "$LAN_DEV" 2>/dev/null | awk '/inet /{print $2; exit}')"
+  NB_ADDR="$(ip -4 addr show dev wt0 2>/dev/null | awk '/inet /{print $2; exit}')"
+  [ -n "$LAN_ADDR" ] || LAN_ADDR=""
+  printf '{"ok":true,"lan_dev":"%s","lan_cidr":"%s","netbird":"%s"}\n' "$(json_escape "$LAN_DEV")" "$(json_escape "$LAN_ADDR")" "$(json_escape "$NB_ADDR")"
+  ;;
 scan)
   CIDR="$(decode "$(param cidr "$BODY")")"
   LAN_DEV="$(uci -q get network.lan.device 2>/dev/null || uci -q get network.lan.ifname 2>/dev/null || printf br-lan)"
