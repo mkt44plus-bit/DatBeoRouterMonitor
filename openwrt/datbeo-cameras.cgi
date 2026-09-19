@@ -87,6 +87,23 @@ lan_info)
   [ -n "$LAN_ADDR" ] || LAN_ADDR=""
   printf '{"ok":true,"lan_dev":"%s","lan_cidr":"%s","netbird":"%s"}\n' "$(json_escape "$LAN_DEV")" "$(json_escape "$LAN_ADDR")" "$(json_escape "$NB_ADDR")"
   ;;
+camera_profile() {
+  M="$1"
+  M="$(printf "%s" "$M" | tr '[:lower:]' '[:upper:]' | tr -d ':.-')"
+  OUI="$(printf "%s" "$M" | cut -c1-6)"
+  CAM_VENDOR="Unknown"
+  CAM_PATH="/cam/realmonitor?channel=1&subtype=0"
+  CAM_HINT="Generic RTSP"
+  case "$OUI" in
+    B436E3) CAM_VENDOR="KBVISION"; CAM_PATH="/cam/realmonitor?channel=1&subtype=0"; CAM_HINT="KBVISION/Dahua" ;;
+  esac
+  case "$CAM_NAME" in
+    *HIKVISION*|*Hikvision*|*hikvision*) CAM_VENDOR="Hikvision"; CAM_PATH="/Streaming/Channels/101"; CAM_HINT="Hikvision" ;;
+    *DAHUA*|*Dahua*|*dahua*) CAM_VENDOR="Dahua"; CAM_PATH="/cam/realmonitor?channel=1&subtype=0"; CAM_HINT="Dahua" ;;
+    *KBVISION*|*Kbvision*|*kbvision*) CAM_VENDOR="KBVISION"; CAM_PATH="/cam/realmonitor?channel=1&subtype=0"; CAM_HINT="KBVISION/Dahua" ;;
+  esac
+}
+
 scan)
   CIDR="$(decode "$(param cidr "$BODY")")"
   LAN_DEV="$(uci -q get network.lan.device 2>/dev/null || uci -q get network.lan.ifname 2>/dev/null || printf br-lan)"
@@ -222,9 +239,16 @@ scan)
 
     PROTO="HTTP"
     PORT="$HTTP_PORT"
-    [ -n "$RTSP_PORT" ] && { PROTO="RTSP"; PORT="$RTSP_PORT"; }
-
-    printf '%s|%s|%s|%s|%s\n' "$SIP" "$PROTO" "$PORT" "$MAC" "$NAME" >> "$OUT"
+    VENDOR="Unknown"
+    RPATH=""
+    HINT="Generic RTSP"
+    [ -n "$RTSP_PORT" ] && {
+      PROTO="RTSP"; PORT="$RTSP_PORT"
+      CAM_NAME="$NAME"
+      camera_profile "$MAC"
+      VENDOR="$CAM_VENDOR"; RPATH="$CAM_PATH"; HINT="$CAM_HINT"
+    }
+    printf '%s|%s|%s|%s|%s|%s|%s|%s\n' "$SIP" "$PROTO" "$PORT" "$MAC" "$NAME" "$VENDOR" "$RPATH" "$HINT" >> "$OUT"
   }
 
   WORKERS=16
@@ -242,11 +266,12 @@ scan)
 
   printf '{"ok":true,"devices":['
   FIRST=1
-  while IFS='|' read -r SIP PROTO SPORT MAC NAME; do
+  while IFS='|' read -r SIP PROTO SPORT MAC NAME VENDOR RPATH HINT; do
     [ -n "$SIP" ] || continue
     [ "$FIRST" -eq 1 ] || printf ","
     FIRST=0
-    printf '{"ip":"%s","protocol":"%s","port":"%s","mac":"%s","name":"%s"}'       "$(json_escape "$SIP")" "$(json_escape "$PROTO")" "$(json_escape "$SPORT")" "$(json_escape "$MAC")" "$(json_escape "$NAME")"
+    printf '{"ip":"%s","protocol":"%s","port":"%s","mac":"%s","name":"%s","vendor":"%s","rtsp_path":"%s","rtsp_hint":"%s"}' \
+      "$(json_escape "$SIP")" "$(json_escape "$PROTO")" "$(json_escape "$SPORT")" "$(json_escape "$MAC")" "$(json_escape "$NAME")" "$(json_escape "$VENDOR")" "$(json_escape "$RPATH")" "$(json_escape "$HINT")"
   done < "$OUT"
   printf '],"cidr":"%s","lan_dev":"%s"}\n' "$(json_escape "$CIDR")" "$(json_escape "$LAN_DEV")"
 
