@@ -357,21 +357,64 @@ stream)
   [ -n "$ID" ] || { printf '{"ok":false,"error":"Thiếu id"}\n'; exit 0; }
   [ -n "$FFM" ] || { printf '{"ok":false,"error":"Router chưa có ffmpeg. Chạy lại deploy."}\n'; exit 0; }
   load_camera || { printf '{"ok":false,"error":"Không tìm thấy camera"}\n'; exit 0; }
-  DIR="$BASE/$ID"; mkdir -p "$DIR"; PIDFILE="/tmp/datbeo-camera-$ID.pid"
+  DIR="$BASE/$ID"; mkdir -p "$DIR"; PIDFILE="/tmp/datbeo-camera-$ID.pid"; LOGFILE="$DIR/ffmpeg.log"
   PID=""; [ -f "$PIDFILE" ] && PID="$(cat "$PIDFILE" 2>/dev/null || true)"
   if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null && [ -f "$DIR/index.m3u8" ]; then
     printf '{"ok":true,"url":"/datbeo/camera-stream/%s/index.m3u8"}\n' "$(json_escape "$ID")"; exit 0
   fi
-  rm -f "$DIR"/*.m3u8 "$DIR"/*.ts 2>/dev/null || true
+
+  rm -f "$DIR"/*.m3u8 "$DIR"/*.ts "$DIR"/*.mp4 "$LOGFILE" 2>/dev/null || true
   URL="$(rtsp_url)"
-  "$FFM" -hide_banner -loglevel error -rtsp_transport tcp -i "$URL" -map 0:v:0 -an -c:v copy -f hls -hls_time 1 -hls_list_size 3 -hls_flags delete_segments+append_list+omit_endlist -hls_segment_filename "$DIR/seg_%03d.ts" "$DIR/index.m3u8" >/dev/null 2>&1 </dev/null &
-  echo $! > "$PIDFILE"
-  sleep 2
-  if [ -f "$DIR/index.m3u8" ]; then
-    printf '{"ok":true,"url":"/datbeo/camera-stream/%s/index.m3u8"}\n' "$(json_escape "$ID")"
-  else
-    printf '{"ok":false,"error":"Không tạo được luồng HLS. Kiểm tra RTSP và codec camera."}\n'
+
+  # Probe the RTSP stream first so failures are actionable and codec can be selected.
+  FFP="$(command -v ffprobe 2>/dev/null || true)"
+  CODEC=""
+  if [ -n "$FFP" ]; then
+    CODEC="$(timeout 8 "$FFP" -v error -rtsp_transport tcp -rw_timeout 6000000       -select_streams v:0 -show_entries stream=codec_name -of default=nw=1:nk=1       "$URL" 2>/dev/null | head -n 1 || true)"
   fi
+
+  case "$CODEC" in
+    h264)
+      "$FFM" -hide_banner -loglevel error -rtsp_transport tcp -i "$URL"         -map 0:v:0 -an -c:v copy -f hls -hls_time 1 -hls_list_size 3         -hls_flags delete_segments+append_list+omit_endlist         -hls_segment_filename "$DIR/seg_%03d.ts" "$DIR/index.m3u8"         >"$LOGFILE" 2>&1 </dev/null &
+      ;;
+    hevc|h265)
+      # Keep video copy to avoid CPU-heavy ARMv7 transcoding; use fMP4 HLS for HEVC.
+      "$FFM" -hide_banner -loglevel error -rtsp_transport tcp -i "$URL"         -map 0:v:0 -an -c:v copy -f hls -hls_segment_type fmp4         -hls_fmp4_init_filename init.mp4 -hls_time 1 -hls_list_size 3         -hls_flags delete_segments+append_list+omit_endlist         -hls_segment_filename "$DIR/seg_%03d.m4s" "$DIR/index.m3u8"         >"$LOGFILE" 2>&1 </dev/null &
+      ;;
+    "")
+      printf '{"ok":false,"error":"Không đọc được RTSP stream. Kiểm tra username/password và RTSP path."}\n'
+      exit 0
+      ;;
+    *)
+      # Unknown codec: try MPEG-TS HLS with stream copy first.
+      "$FFM" -hide_banner -loglevel error -rtsp_transport tcp -i "$URL"         -map 0:v:0 -an -c:v copy -f hls -hls_time 1 -hls_list_size 3         -hls_flags delete_segments+append_list+omit_endlist         -hls_segment_filename "$DIR/seg_%03d.ts" "$DIR/index.m3u8"         >"$LOGFILE" 2>&1 </dev/null &
+      ;;
+  esac
+
+  echo $! > "$PIDFILE"
+
+  N=0
+  while [ "$N" -lt 8 ]; do
+    if [ -f "$DIR/index.m3u8" ]; then
+      printf '{"ok":true,"url":"/datbeo/camera-stream/%s/index.m3u8"}\n' "$(json_escape "$ID")"; exit 0
+    fi
+    PID_NOW="$(cat "$PIDFILE" 2>/dev/null || true)"
+    if [ -n "$PID_NOW" ] && ! kill -0 "$PID_NOW" 2>/dev/null; then
+      ERR="$(tail -n 8 "$LOGFILE" 2>/dev/null | tr '\n' ' ' | cut -c1-800)"
+      printf '{"ok":false,"error":"FFmpeg không tạo được HLS: %s"}\n' "$(json_escape "$ERR")"
+      exit 0
+    fi
+    sleep 1
+    N=$((N+1))
+  done
+
+  ERR="$(tail -n 8 "$LOGFILE" 2>/dev/null | tr '\n' ' ' | cut -c1-800)"
+  if [ -n "$ERR" ]; then
+    printf '{"ok":false,"error":"FFmpeg chưa tạo HLS: %s"}\n' "$(json_escape "$ERR")"
+  else
+    printf '{"ok":false,"error":"RTSP đã kết nối nhưng HLS chưa khởi tạo sau 8 giây. Có thể camera dùng codec/path mà browser HLS không hỗ trợ."}\n'
+  fi
+  ;;
   ;;
 stop)
   PIDFILE="/tmp/datbeo-camera-$ID.pid"
