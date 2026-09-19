@@ -81,18 +81,21 @@ rtsp_url() {
 
 camera_profile() {
   M="$1"
-  M="$(printf "%s" "$M" | tr '[:lower:]' '[:upper:]' | tr -d ':.-')"
+  # BusyBox tr on OpenWrt may not honor character classes for case conversion.
+  # Normalize the MAC by removing separators and match lowercase OUIs.
+  M="$(printf "%s" "$M" | tr -d ':.-' | tr 'A-F' 'a-f')"
   OUI="$(printf "%s" "$M" | cut -c1-6)"
   CAM_VENDOR="Unknown"
   CAM_PATH="/cam/realmonitor?channel=1&subtype=0"
   CAM_HINT="Generic RTSP"
   case "$OUI" in
-    B436E3) CAM_VENDOR="KBVISION"; CAM_PATH="/cam/realmonitor?channel=1&subtype=0"; CAM_HINT="KBVISION/Dahua" ;;
+    b436e3) CAM_VENDOR="KBVISION"; CAM_PATH="/cam/realmonitor?channel=1&subtype=0"; CAM_HINT="KBVISION/Dahua" ;;
   esac
-  case "$CAM_NAME" in
-    *HIKVISION*|*Hikvision*|*hikvision*) CAM_VENDOR="Hikvision"; CAM_PATH="/Streaming/Channels/101"; CAM_HINT="Hikvision" ;;
-    *DAHUA*|*Dahua*|*dahua*) CAM_VENDOR="Dahua"; CAM_PATH="/cam/realmonitor?channel=1&subtype=0"; CAM_HINT="Dahua" ;;
-    *KBVISION*|*Kbvision*|*kbvision*) CAM_VENDOR="KBVISION"; CAM_PATH="/cam/realmonitor?channel=1&subtype=0"; CAM_HINT="KBVISION/Dahua" ;;
+  CAM_NAME_NORM="$(printf "%s" "$CAM_NAME" | tr 'A-Z' 'a-z')"
+  case "$CAM_NAME_NORM" in
+    *hikvision*) CAM_VENDOR="Hikvision"; CAM_PATH="/Streaming/Channels/101"; CAM_HINT="Hikvision" ;;
+    *dahua*) CAM_VENDOR="Dahua"; CAM_PATH="/cam/realmonitor?channel=1&subtype=0"; CAM_HINT="Dahua" ;;
+    *kbvision*) CAM_VENDOR="KBVISION"; CAM_PATH="/cam/realmonitor?channel=1&subtype=0"; CAM_HINT="KBVISION/Dahua" ;;
   esac
 }
 
