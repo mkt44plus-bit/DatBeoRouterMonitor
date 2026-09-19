@@ -8,6 +8,32 @@ mkdir -p /www/datbeo /www/datbeo/camera-stream /etc/datbeo-router-monitor
 
 if command -v apk >/dev/null 2>&1; then
   apk -U add ffmpeg ffprobe libffmpeg-full netcat >/dev/null 2>&1 || echo "WARN: ffmpeg/ffprobe/netcat not installed; camera test/live view/scan will be unavailable."
+
+  # The camera is H.264. OpenWrt stock FFmpeg may omit the H.264 parser/decoder.
+  # Install DatBeo matching ARMv7 H.264 FFmpeg only when the parser is absent.
+  if command -v ffmpeg >/dev/null 2>&1 && ! ffmpeg -hide_banner -parsers 2>/dev/null | grep -qE "^[[:space:]]*..*h264[[:space:]]"; then
+    H264_URL="https://github.com/mkt44plus-bit/DatBeoRouterMonitor/releases/download/ffmpeg-h264-armv7/ffmpeg-h264-armv7.tar.gz"
+    TMP_H264="/tmp/datbeo-ffmpeg-h264.tar.gz"
+    TMP_H264_DIR="/tmp/datbeo-ffmpeg-h264"
+    rm -rf "$TMP_H264_DIR" "$TMP_H264"
+    mkdir -p "$TMP_H264_DIR"
+    if wget -qO "$TMP_H264" "$H264_URL"; then
+      tar -xzf "$TMP_H264" -C "$TMP_H264_DIR"
+      if ls "$TMP_H264_DIR"/ffmpeg-*.apk "$TMP_H264_DIR"/ffprobe-*.apk "$TMP_H264_DIR"/libffmpeg-full-*.apk >/dev/null 2>&1; then
+        apk del ffmpeg ffprobe libffmpeg-full >/dev/null 2>&1 || true
+        if apk add --allow-untrusted "$TMP_H264_DIR"/libffmpeg-full-*.apk "$TMP_H264_DIR"/ffmpeg-*.apk "$TMP_H264_DIR"/ffprobe-*.apk >/dev/null 2>&1 &&
+           ffmpeg -hide_banner -parsers 2>/dev/null | grep -qE "^[[:space:]]*..*h264[[:space:]]"; then
+          echo "DatBeo FFmpeg: H.264 parser ready"
+        else
+          echo "WARN: custom H.264 FFmpeg install failed; restoring OpenWrt FFmpeg."
+          apk add ffmpeg ffprobe libffmpeg-full >/dev/null 2>&1 || true
+        fi
+      fi
+    else
+      echo "WARN: custom H.264 FFmpeg release not available yet; keeping OpenWrt FFmpeg."
+    fi
+    rm -rf "$TMP_H264_DIR" "$TMP_H264"
+  fi
 fi
 
 wget -qO /www/datbeo/index.html "$BASE/index.html"
